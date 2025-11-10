@@ -1,23 +1,49 @@
-import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Filter } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 import RoomGrid from '@/components/RoomGrid';
-import RoomModal from '@/components/RoomModal';
-import BookingModal from '@/components/BookingModal';
+import CategoryFilters from '@/components/CategoryFilters';
 import roomService from '@/services/roomService';
 import categoryService from '@/services/categoryService';
-import bookingService from '@/services/bookingService';
 
 const CategoryPage = () => {
   const { categoryName } = useParams();
+  const navigate = useNavigate();
   const [rooms, setRooms] = useState([]);
+  const [allRooms, setAllRooms] = useState([]); // Store all rooms for filtering
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedRoom, setSelectedRoom] = useState(null);
-  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [isFiltering, setIsFiltering] = useState(false);
   const [categoryInfo, setCategoryInfo] = useState(null);
+  const [filters, setFilters] = useState({});
 
+  // Extract available areas and amenities from rooms
+  const availableAreas = useMemo(() => {
+    const areas = new Set();
+    allRooms.forEach(room => {
+      if (room.location?.city) {
+        areas.add(room.location.city);
+      }
+      if (room.location?.address) {
+        const area = room.location.address.split(',')[0]?.trim();
+        if (area) areas.add(area);
+      }
+    });
+    return Array.from(areas).sort();
+  }, [allRooms]);
+
+  const availableAmenities = useMemo(() => {
+    const amenities = new Set();
+    allRooms.forEach(room => {
+      if (room.amenities) {
+        room.amenities.forEach(amenity => amenities.add(amenity));
+      }
+    });
+    return Array.from(amenities);
+  }, [allRooms]);
+
+  // Load initial category data
   useEffect(() => {
     const loadCategoryData = async () => {
       try {
@@ -30,7 +56,8 @@ const CategoryPage = () => {
         ]);
 
         if (roomsResponse.success) {
-          setRooms(roomsResponse.data);
+          setAllRooms(roomsResponse.data || []);
+          setRooms(roomsResponse.data || []);
         } else {
           toast({
             title: "Error Loading Rooms",
@@ -59,75 +86,39 @@ const CategoryPage = () => {
     }
   }, [categoryName]);
 
-  const handleUpdateRoom = async (updatedRoom) => {
+  // Handle filter changes
+  const handleFiltersChange = async (newFilters) => {
+    setIsFiltering(true);
+    setFilters(newFilters);
+
     try {
-      const response = await roomService.updateRoom(updatedRoom.id, updatedRoom);
+      // Call backend API with filters
+      const response = await roomService.getRoomsByCategory(decodeURIComponent(categoryName), newFilters);
+      
       if (response.success) {
-        const updatedRooms = rooms.map(room => 
-          room.id === updatedRoom.id ? response.data : room
-        );
-        setRooms(updatedRooms);
-        setSelectedRoom(response.data);
+        setRooms(response.data || []);
+      } else {
         toast({
-          title: "Room Updated",
-          description: "Room information has been updated successfully.",
+          title: "Filter Error",
+          description: "Failed to apply filters. Please try again.",
+          variant: "destructive"
         });
       }
     } catch (error) {
+      console.error('Error applying filters:', error);
       toast({
-        title: "Update Failed",
-        description: "Failed to update room information.",
+        title: "Filter Error",
+        description: "Failed to apply filters. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setIsFiltering(false);
     }
   };
 
-  const handleDeleteRoom = async (roomId) => {
-    try {
-      const response = await roomService.deleteRoom(roomId);
-      if (response.success) {
-        const updatedRooms = rooms.filter(room => room.id !== roomId);
-        setRooms(updatedRooms);
-        setSelectedRoom(null);
-        toast({
-          title: "Room Deleted",
-          description: "Room has been deleted successfully.",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Delete Failed",
-        description: "Failed to delete room.",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleBookRoom = async (bookingData) => {
-    try {
-      const response = await bookingService.createBooking({
-        ...bookingData,
-        room: selectedRoom.id,
-        contactInfo: {
-          phone: bookingData.phone || '',
-          email: bookingData.email || ''
-        }
-      });
-
-      if (response.success) {
-        toast({
-          title: "Booking Created",
-          description: "Your booking has been created successfully!",
-        });
-        setIsBookingModalOpen(false);
-      }
-    } catch (error) {
-      toast({
-        title: "Booking Failed",
-        description: error.message || "Failed to create booking.",
-        variant: "destructive"
-      });
-    }
+  const handleRoomClick = (room) => {
+    // Navigate to property detail page
+    navigate(`/property/${room.id}`);
   };
 
   if (isLoading) {
@@ -155,45 +146,59 @@ const CategoryPage = () => {
           {categoryInfo?.description && (
             <p className="text-lg text-muted-foreground">{categoryInfo.description}</p>
           )}
-          <p className="text-sm text-muted-foreground mt-2">
-            {rooms.length} room{rooms.length !== 1 ? 's' : ''} available
-          </p>
+          <div className="flex items-center justify-between mt-4">
+            <p className="text-sm text-muted-foreground">
+              {isFiltering ? (
+                <span className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Filtering rooms...
+                </span>
+              ) : (
+                `${rooms.length} room${rooms.length !== 1 ? 's' : ''} available`
+              )}
+            </p>
+            {allRooms.length > 0 && (
+              <div className="text-sm text-muted-foreground">
+                Showing {rooms.length} of {allRooms.length} rooms
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Filters */}
+        <CategoryFilters
+          categoryName={categoryName}
+          onFiltersChange={handleFiltersChange}
+          availableAreas={availableAreas}
+          availableAmenities={availableAmenities}
+        />
         
+        {/* Results */}
         {rooms.length > 0 ? (
-          <RoomGrid rooms={rooms} onRoomClick={setSelectedRoom} />
-        ) : (
+          <RoomGrid rooms={rooms} onRoomClick={handleRoomClick} />
+        ) : !isLoading ? (
           <div className="text-center py-16">
             <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Loader2 className="w-12 h-12 text-gray-400" />
+              <Filter className="w-12 h-12 text-gray-400" />
             </div>
             <h3 className="text-2xl font-bold text-gray-900 mb-2">No {displayName}s Found</h3>
             <p className="text-muted-foreground mb-6">
-              We don't have any {displayName.toLowerCase()}s available at the moment.
+              {Object.keys(filters).length > 0 
+                ? "No rooms match your current filters. Try adjusting your search criteria."
+                : `We don't have any ${displayName.toLowerCase()}s available at the moment.`
+              }
             </p>
+            {Object.keys(filters).length > 0 && (
+              <button
+                onClick={() => handleFiltersChange({})}
+                className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                Clear All Filters
+              </button>
+            )}
           </div>
-        )}
+        ) : null}
       </div>
-
-      {selectedRoom && (
-        <RoomModal
-          room={selectedRoom}
-          isOpen={!!selectedRoom}
-          onClose={() => setSelectedRoom(null)}
-          onUpdate={handleUpdateRoom}
-          onDelete={handleDeleteRoom}
-          onBook={() => setIsBookingModalOpen(true)}
-        />
-      )}
-
-      {isBookingModalOpen && selectedRoom && (
-        <BookingModal
-          room={selectedRoom}
-          isOpen={isBookingModalOpen}
-          onClose={() => setIsBookingModalOpen(false)}
-          onBook={handleBookRoom}
-        />
-      )}
     </>
   );
 };

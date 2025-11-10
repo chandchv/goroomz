@@ -53,33 +53,45 @@ exports.validateRoom = [
     .isLength({ min: 20, max: 1000 })
     .withMessage('Description must be between 20 and 1000 characters'),
   body('price')
+    .optional()
     .isNumeric()
     .isFloat({ min: 0 })
     .withMessage('Price must be a positive number'),
   body('roomType')
-    .isIn(['Private Room', 'Shared Room', 'Entire Place', 'Studio'])
+    .optional()
+    .isIn(['Private Room', 'Shared Room', 'Entire Place', 'Studio', 'Hotel Room', 'PG', 'entire_place', 'private_room', 'shared_room'])
     .withMessage('Invalid room type'),
   body('category')
     .isIn(['PG', 'Hotel Room', 'Independent Home', 'Home Stay'])
     .withMessage('Invalid category'),
   body('maxGuests')
-    .isInt({ min: 1, max: 10 })
-    .withMessage('Maximum guests must be between 1 and 10'),
+    .optional()
+    .isInt({ min: 1, max: 20 })
+    .withMessage('Maximum guests must be between 1 and 20'),
   body('location.address')
+    .optional()
     .trim()
-    .notEmpty()
-    .withMessage('Address is required'),
+    .isString()
+    .withMessage('Address must be a string'),
   body('location.city')
+    .optional()
     .trim()
-    .notEmpty()
-    .withMessage('City is required'),
+    .isString()
+    .withMessage('City must be a string'),
   body('location.state')
+    .optional()
     .trim()
-    .notEmpty()
-    .withMessage('State is required'),
+    .isString()
+    .withMessage('State must be a string'),
   body('location.pincode')
+    .optional()
     .matches(/^[1-9][0-9]{5}$/)
-    .withMessage('Invalid pincode')
+    .withMessage('Invalid pincode'),
+  body('city')
+    .optional()
+    .trim()
+    .isString()
+    .withMessage('City must be a string')
 ];
 
 // Booking validation rules

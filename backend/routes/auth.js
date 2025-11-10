@@ -238,8 +238,8 @@ router.put('/password', protect, async (req, res) => {
 
 // @desc    Logout user (client-side token removal)
 // @route   POST /api/auth/logout
-// @access  Private
-router.post('/logout', protect, (req, res) => {
+// @access  Public (no token required for logout)
+router.post('/logout', (req, res) => {
   res.json({
     success: true,
     message: 'Logged out successfully'

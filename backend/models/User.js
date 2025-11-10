@@ -8,6 +8,11 @@ const User = sequelize.define('User', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true
   },
+  firebase_uid: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    unique: true,
+  },
   name: {
     type: DataTypes.STRING,
     allowNull: false,
@@ -27,10 +32,9 @@ const User = sequelize.define('User', {
   },
   password: {
     type: DataTypes.STRING,
-    allowNull: false,
+    allowNull: true,
     validate: {
       len: [6, 255],
-      notEmpty: true
     }
   },
   phone: {
@@ -42,7 +46,7 @@ const User = sequelize.define('User', {
     }
   },
   role: {
-    type: DataTypes.ENUM('user', 'owner', 'admin'),
+    type: DataTypes.ENUM('user', 'owner', 'category_owner', 'admin'),
     defaultValue: 'user',
     allowNull: false
   },

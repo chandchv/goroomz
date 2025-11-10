@@ -1,6 +1,7 @@
 const { sequelize } = require('../config/database');
 const User = require('./User');
 const Room = require('./Room');
+const RoomType = require('./RoomType');
 const Booking = require('./Booking');
 const Category = require('./Category');
 
@@ -13,6 +14,23 @@ User.hasMany(Room, {
 Room.belongsTo(User, {
   foreignKey: 'ownerId',
   as: 'owner'
+});
+
+// Category owner associations
+User.hasMany(Room, {
+  foreignKey: 'categoryOwnerId',
+  as: 'categoryOwnedRooms'
+});
+
+Room.belongsTo(User, {
+  foreignKey: 'categoryOwnerId',
+  as: 'categoryOwner'
+});
+
+// Admin approval associations
+Room.belongsTo(User, {
+  foreignKey: 'approvedBy',
+  as: 'approvedByUser'
 });
 
 User.hasMany(Booking, {
@@ -45,6 +63,18 @@ Booking.belongsTo(Room, {
   as: 'room'
 });
 
+// Room Type associations
+Room.hasMany(RoomType, {
+  foreignKey: 'propertyId',
+  as: 'roomTypes',
+  onDelete: 'CASCADE'
+});
+
+RoomType.belongsTo(Room, {
+  foreignKey: 'propertyId',
+  as: 'property'
+});
+
 // Sync database
 const syncDatabase = async (force = false) => {
   try {
@@ -60,6 +90,7 @@ module.exports = {
   sequelize,
   User,
   Room,
+  RoomType,
   Booking,
   Category,
   syncDatabase

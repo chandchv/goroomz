@@ -1,4 +1,4 @@
-const jwt = require('jsonwebtoken');
+const admin = require('../config/firebaseAdmin');
 const { User } = require('../models');
 
 // Protect routes - require authentication
@@ -19,21 +19,28 @@ exports.protect = async (req, res, next) => {
     }
 
     try {
-      // Verify token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      
-      // Get user from token
-      const user = await User.findByPk(decoded.id);
+      // Verify Firebase ID token
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      const { uid, email, name, phone_number } = decodedToken;
+
+      // Find or create user in local DB
+      let user = await User.findOne({ where: { firebase_uid: uid } });
+
       if (!user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Token is not valid. User not found.'
+        // If user doesn't exist, create a new one
+        user = await User.create({
+          firebase_uid: uid,
+          email: email,
+          name: name || 'New User',
+          phone: phone_number,
+          role: 'user' // default role
         });
       }
 
       req.user = user;
       next();
     } catch (error) {
+      console.error('Firebase token verification error:', error);
       return res.status(401).json({
         success: false,
         message: 'Token is not valid.'

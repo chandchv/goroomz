@@ -1,6 +1,7 @@
 const express = require('express');
 const Booking = require('../models/Booking');
 const Room = require('../models/Room');
+const User = require('../models/User');
 const { protect } = require('../middleware/auth');
 const { 
   validateBooking, 
@@ -8,8 +9,184 @@ const {
   validatePagination,
   handleValidationErrors 
 } = require('../middleware/validation');
+const crypto = require('crypto');
 
 const router = express.Router();
+
+// Helper function to generate random password
+const generatePassword = () => {
+  const length = 12;
+  const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+  let password = '';
+  for (let i = 0; i < length; i++) {
+    const randomIndex = crypto.randomInt(0, charset.length);
+    password += charset[randomIndex];
+  }
+  return password;
+};
+
+// @desc    Create guest booking (without authentication)
+// @route   POST /api/bookings/guest
+// @access  Public
+router.post('/guest', async (req, res) => {
+  try {
+    const { room, checkIn, checkOut, guests, name, email, phone, specialRequests } = req.body;
+
+    // Validate required fields
+    if (!room || !checkIn || !name || !email || !phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide all required fields: room, checkIn, name, email, phone'
+      });
+    }
+
+    // Check if room exists and is available
+    const roomData = await Room.findByPk(room);
+    if (!roomData) {
+      return res.status(404).json({
+        success: false,
+        message: 'Room not found'
+      });
+    }
+
+    if (!roomData.isActive) {
+      return res.status(400).json({
+        success: false,
+        message: 'Room is not available for booking'
+      });
+    }
+
+    // Check or create user
+    let user = await User.findOne({ where: { email } });
+    let generatedPassword = null;
+    let isNewUser = false;
+
+    if (!user) {
+      // Create new user with generated password
+      generatedPassword = generatePassword();
+      isNewUser = true;
+
+      user = await User.create({
+        name,
+        email,
+        phone,
+        password: generatedPassword,
+        role: 'user',
+        isVerified: false
+      });
+
+      console.log(`New user created for booking: ${email}`);
+      console.log(`Generated password: ${generatedPassword}`);
+      // TODO: Send email with password to user
+    } else {
+      // Update phone if provided and different
+      if (phone && user.phone !== phone) {
+        await user.update({ phone });
+      }
+    }
+
+    // Validate dates
+    const checkInDate = new Date(checkIn);
+    const checkOutDate = checkOut ? new Date(checkOut) : null;
+
+    if (checkInDate < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Check-in date cannot be in the past'
+      });
+    }
+
+    if (checkOutDate && checkOutDate <= checkInDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Check-out date must be after check-in date'
+      });
+    }
+
+    // For monthly bookings, set check-out to 30 days later if not provided
+    const finalCheckOut = checkOutDate || new Date(checkInDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    // Calculate total amount
+    const duration = Math.ceil((finalCheckOut - checkInDate) / (1000 * 60 * 60 * 24));
+    const totalAmount = roomData.price * duration;
+
+    // Sanitize phone number - extract only digits
+    const sanitizedPhone = phone.replace(/\D/g, ''); // Remove all non-digit characters
+    const phoneFor10Digits = sanitizedPhone.slice(-10); // Get last 10 digits
+
+    // Validate phone
+    if (phoneFor10Digits.length !== 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid 10-digit phone number'
+      });
+    }
+
+    // Create booking
+    const bookingData = {
+      roomId: room,
+      userId: user.id,
+      ownerId: roomData.ownerId,
+      checkIn: checkInDate,
+      checkOut: finalCheckOut,
+      guests: guests || 1,
+      totalAmount,
+      contactInfo: {
+        phone: phoneFor10Digits,
+        email: email.trim()
+      },
+      specialRequests: specialRequests || '',
+      status: 'pending'
+    };
+
+    const booking = await Booking.create(bookingData);
+    
+    // Populate the booking with room and user details
+    const populatedBooking = await Booking.findByPk(booking.id, {
+      include: [
+        {
+          model: Room,
+          as: 'room',
+          attributes: ['id', 'title', 'location', 'price', 'images']
+        },
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email']
+        },
+        {
+          model: User,
+          as: 'owner',
+          attributes: ['id', 'name', 'email', 'phone']
+        }
+      ]
+    });
+
+    res.status(201).json({
+      success: true,
+      message: isNewUser 
+        ? 'Booking created successfully! An account has been created for you. Check your email for login credentials.'
+        : 'Booking created successfully!',
+      data: {
+        booking: populatedBooking,
+        ...(isNewUser && generatedPassword ? {
+          credentials: {
+            email,
+            password: generatedPassword,
+            message: 'Please save these credentials. You can use them to login and track your bookings.'
+          }
+        } : {})
+      }
+    });
+  } catch (error) {
+    console.error('Create guest booking error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating booking',
+      error: error.message
+    });
+  }
+});
 
 // @desc    Create new booking
 // @route   POST /api/bookings
@@ -19,7 +196,7 @@ router.post('/', protect, validateBooking, handleValidationErrors, async (req, r
     const { room, checkIn, checkOut, guests, contactInfo, specialRequests } = req.body;
 
     // Check if room exists and is available
-    const roomData = await Room.findById(room);
+    const roomData = await Room.findByPk(room);
     if (!roomData) {
       return res.status(404).json({
         success: false,
@@ -35,7 +212,7 @@ router.post('/', protect, validateBooking, handleValidationErrors, async (req, r
     }
 
     // Check if room owner is trying to book their own room
-    if (roomData.owner.toString() === req.user._id) {
+    if (roomData.ownerId === req.user.id) {
       return res.status(400).json({
         success: false,
         message: 'You cannot book your own room'
@@ -60,16 +237,23 @@ router.post('/', protect, validateBooking, handleValidationErrors, async (req, r
       });
     }
 
+    // Calculate total amount
+    const duration = Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
+    const totalAmount = roomData.price * duration;
+
     // Check for existing bookings in the same date range
+    const { Op } = require('sequelize');
     const existingBooking = await Booking.findOne({
-      room,
-      status: { $in: ['pending', 'confirmed'] },
-      $or: [
-        {
-          checkIn: { $lt: checkOutDate },
-          checkOut: { $gt: checkInDate }
-        }
-      ]
+      where: {
+        roomId: room,
+        status: { [Op.in]: ['pending', 'confirmed'] },
+        [Op.or]: [
+          {
+            checkIn: { [Op.lt]: checkOutDate },
+            checkOut: { [Op.gt]: checkInDate }
+          }
+        ]
+      }
     });
 
     if (existingBooking) {
@@ -81,12 +265,13 @@ router.post('/', protect, validateBooking, handleValidationErrors, async (req, r
 
     // Create booking
     const bookingData = {
-      room,
-      user: req.user._id,
-      owner: roomData.owner,
+      roomId: room,
+      userId: req.user.id,
+      ownerId: roomData.ownerId,
       checkIn: checkInDate,
       checkOut: checkOutDate,
       guests,
+      totalAmount,
       contactInfo,
       specialRequests
     };
@@ -94,22 +279,37 @@ router.post('/', protect, validateBooking, handleValidationErrors, async (req, r
     const booking = await Booking.create(bookingData);
     
     // Populate the booking with room and user details
-    await booking.populate([
-      { path: 'room', select: 'title location price images' },
-      { path: 'user', select: 'name email' },
-      { path: 'owner', select: 'name email phone' }
-    ]);
+    const populatedBooking = await Booking.findByPk(booking.id, {
+      include: [
+        {
+          model: Room,
+          as: 'room',
+          attributes: ['id', 'title', 'location', 'price', 'images']
+        },
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email']
+        },
+        {
+          model: User,
+          as: 'owner',
+          attributes: ['id', 'name', 'email', 'phone']
+        }
+      ]
+    });
 
     res.status(201).json({
       success: true,
       message: 'Booking created successfully',
-      data: booking
+      data: populatedBooking
     });
   } catch (error) {
     console.error('Create booking error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error creating booking'
+      message: 'Error creating booking',
+      error: error.message
     });
   }
 });
@@ -121,32 +321,39 @@ router.get('/', protect, validatePagination, handleValidationErrors, async (req,
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    const offset = (page - 1) * limit;
 
-    let filter = { user: req.user._id };
+    let whereClause = { userId: req.user.id };
     
     if (req.query.status) {
-      filter.status = req.query.status;
+      whereClause.status = req.query.status;
     }
 
-    const bookings = await Booking.find(filter)
-      .populate([
-        { path: 'room', select: 'title location price images category' },
-        { path: 'owner', select: 'name email phone' }
-      ])
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    const total = await Booking.countDocuments(filter);
+    const { count, rows: bookings } = await Booking.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: Room,
+          as: 'room',
+          attributes: ['title', 'location', 'price', 'images', 'category']
+        },
+        {
+          model: User,
+          as: 'owner',
+          attributes: ['name', 'email', 'phone']
+        }
+      ],
+      order: [['created_at', 'DESC']],
+      offset,
+      limit: parseInt(limit)
+    });
 
     res.json({
       success: true,
       count: bookings.length,
-      total,
+      total: count,
       page,
-      pages: Math.ceil(total / limit),
+      pages: Math.ceil(count / limit),
       data: bookings
     });
   } catch (error) {
@@ -163,12 +370,25 @@ router.get('/', protect, validatePagination, handleValidationErrors, async (req,
 // @access  Private
 router.get('/:id', protect, validateObjectId('id'), handleValidationErrors, async (req, res) => {
   try {
-    const booking = await Booking.findById(req.params.id)
-      .populate([
-        { path: 'room', select: 'title location price images category amenities' },
-        { path: 'user', select: 'name email phone' },
-        { path: 'owner', select: 'name email phone' }
-      ]);
+    const booking = await Booking.findByPk(req.params.id, {
+      include: [
+        {
+          model: Room,
+          as: 'room',
+          attributes: ['id', 'title', 'location', 'price', 'images', 'category', 'amenities']
+        },
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email', 'phone']
+        },
+        {
+          model: User,
+          as: 'owner',
+          attributes: ['id', 'name', 'email', 'phone']
+        }
+      ]
+    });
 
     if (!booking) {
       return res.status(404).json({
@@ -178,8 +398,8 @@ router.get('/:id', protect, validateObjectId('id'), handleValidationErrors, asyn
     }
 
     // Check if user has access to this booking
-    if (booking.user._id.toString() !== req.user._id && 
-        booking.owner._id.toString() !== req.user._id && 
+    if (booking.userId !== req.user.id && 
+        booking.ownerId !== req.user.id && 
         req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
@@ -195,7 +415,8 @@ router.get('/:id', protect, validateObjectId('id'), handleValidationErrors, asyn
     console.error('Get booking error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching booking'
+      message: 'Error fetching booking',
+      error: error.message
     });
   }
 });
@@ -215,9 +436,20 @@ router.put('/:id/status', protect, validateObjectId('id'), handleValidationError
       });
     }
 
-    const booking = await Booking.findById(req.params.id)
-      .populate('room', 'owner')
-      .populate('user', 'name email');
+    const booking = await Booking.findByPk(req.params.id, {
+      include: [
+        {
+          model: Room,
+          as: 'room',
+          attributes: ['id', 'ownerId']
+        },
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email']
+        }
+      ]
+    });
 
     if (!booking) {
       return res.status(404).json({
@@ -228,8 +460,8 @@ router.put('/:id/status', protect, validateObjectId('id'), handleValidationError
 
     // Check authorization
     const canUpdate = 
-      booking.user._id.toString() === req.user._id || // User can cancel their own booking
-      booking.room.owner.toString() === req.user._id || // Owner can confirm/cancel
+      booking.userId === req.user.id || // User can cancel their own booking
+      booking.ownerId === req.user.id || // Owner can confirm/cancel
       req.user.role === 'admin'; // Admin can do anything
 
     if (!canUpdate) {
@@ -252,21 +484,34 @@ router.put('/:id/status', protect, validateObjectId('id'), handleValidationError
     if (status === 'cancelled') {
       updateData.cancelledAt = new Date();
       updateData.cancelledBy = req.user.role === 'admin' ? 'admin' : 
-                              booking.user._id.toString() === req.user._id ? 'user' : 'owner';
+                              booking.userId === req.user.id ? 'user' : 'owner';
       if (cancellationReason) {
         updateData.cancellationReason = cancellationReason;
       }
     }
 
-    const updatedBooking = await Booking.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true }
-    ).populate([
-      { path: 'room', select: 'title location' },
-      { path: 'user', select: 'name email' },
-      { path: 'owner', select: 'name email' }
-    ]);
+    await booking.update(updateData);
+
+    // Fetch updated booking with all associations
+    const updatedBooking = await Booking.findByPk(req.params.id, {
+      include: [
+        {
+          model: Room,
+          as: 'room',
+          attributes: ['id', 'title', 'location']
+        },
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email']
+        },
+        {
+          model: User,
+          as: 'owner',
+          attributes: ['id', 'name', 'email']
+        }
+      ]
+    });
 
     res.json({
       success: true,
@@ -277,7 +522,8 @@ router.put('/:id/status', protect, validateObjectId('id'), handleValidationError
     console.error('Update booking status error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error updating booking status'
+      message: 'Error updating booking status',
+      error: error.message
     });
   }
 });
@@ -289,32 +535,39 @@ router.get('/owner/my-bookings', protect, validatePagination, handleValidationEr
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    const offset = (page - 1) * limit;
 
-    let filter = { owner: req.user._id };
+    let whereClause = { ownerId: req.user.id };
     
     if (req.query.status) {
-      filter.status = req.query.status;
+      whereClause.status = req.query.status;
     }
 
-    const bookings = await Booking.find(filter)
-      .populate([
-        { path: 'room', select: 'title location price images' },
-        { path: 'user', select: 'name email phone' }
-      ])
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
-
-    const total = await Booking.countDocuments(filter);
+    const { count, rows: bookings } = await Booking.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: Room,
+          as: 'room',
+          attributes: ['title', 'location', 'price', 'images']
+        },
+        {
+          model: User,
+          as: 'user',
+          attributes: ['name', 'email', 'phone']
+        }
+      ],
+      order: [['created_at', 'DESC']],
+      offset,
+      limit: parseInt(limit)
+    });
 
     res.json({
       success: true,
       count: bookings.length,
-      total,
+      total: count,
       page,
-      pages: Math.ceil(total / limit),
+      pages: Math.ceil(count / limit),
       data: bookings
     });
   } catch (error) {

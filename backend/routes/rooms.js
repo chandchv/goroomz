@@ -1,6 +1,5 @@
 const express = require('express');
-const Room = require('../models/Room');
-const User = require('../models/User');
+const { Room, User } = require('../models');
 const { protect, authorize, optionalAuth } = require('../middleware/auth');
 const { 
   validateRoom, 
@@ -8,6 +7,7 @@ const {
   validatePagination,
   handleValidationErrors 
 } = require('../middleware/validation');
+const { Op } = require('sequelize');
 
 const router = express.Router();
 
@@ -18,73 +18,111 @@ router.get('/', optionalAuth, validatePagination, handleValidationErrors, async 
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 12;
-    const skip = (page - 1) * limit;
+    const offset = (page - 1) * limit;
 
-    // Build filter object
-    let filter = { isActive: true };
+    // Build filter object using Sequelize syntax
+    let whereClause = { 
+      isActive: true,
+      approvalStatus: 'approved' // Only show approved rooms
+    };
     
     if (req.query.category) {
-      filter.category = req.query.category;
+      whereClause.category = req.query.category;
     }
     
     if (req.query.roomType) {
-      filter.roomType = req.query.roomType;
+      whereClause.roomType = req.query.roomType;
     }
     
     if (req.query.city) {
-      filter['location.city'] = new RegExp(req.query.city, 'i');
+      whereClause['location.city'] = { [Op.iLike]: `%${req.query.city}%` };
     }
     
     if (req.query.minPrice || req.query.maxPrice) {
-      filter.price = {};
-      if (req.query.minPrice) filter.price.$gte = parseInt(req.query.minPrice);
-      if (req.query.maxPrice) filter.price.$lte = parseInt(req.query.maxPrice);
+      whereClause.price = {};
+      if (req.query.minPrice) whereClause.price[Op.gte] = parseFloat(req.query.minPrice);
+      if (req.query.maxPrice) whereClause.price[Op.lte] = parseFloat(req.query.maxPrice);
     }
     
     if (req.query.search) {
-      filter.$text = { $search: req.query.search };
+      whereClause[Op.or] = [
+        { title: { [Op.iLike]: `%${req.query.search}%` } },
+        { description: { [Op.iLike]: `%${req.query.search}%` } },
+        { 'location.city': { [Op.iLike]: `%${req.query.search}%` } },
+        { 'location.address': { [Op.iLike]: `%${req.query.search}%` } }
+      ];
+    }
+
+    // Area filter
+    if (req.query.area) {
+      whereClause[Op.or] = [
+        { 'location.city': { [Op.iLike]: `%${req.query.area}%` } },
+        { 'location.address': { [Op.iLike]: `%${req.query.area}%` } }
+      ];
+    }
+
+    // Amenities filter
+    if (req.query.amenities) {
+      const amenities = req.query.amenities.split(',');
+      whereClause.amenities = { [Op.contains]: amenities };
+    }
+
+    // Guests filter
+    if (req.query.minGuests) {
+      whereClause.maxGuests = { [Op.gte]: parseInt(req.query.minGuests) };
+    }
+
+    // Featured filter
+    if (req.query.featured === 'true') {
+      whereClause.featured = true;
+    }
+
+    // Owner filter
+    if (req.query.owner === 'me' && req.user) {
+      whereClause.ownerId = req.user.id;
     }
 
     // Build sort object
-    let sort = { createdAt: -1 };
-    if (req.query.sort) {
-      switch (req.query.sort) {
+    let orderClause = [['created_at', 'DESC']];
+    if (req.query.sort || req.query.sortBy) {
+      const sortValue = req.query.sort || req.query.sortBy;
+      switch (sortValue) {
+        case 'priceAsc':
         case 'price-asc':
-          sort = { price: 1 };
+          orderClause = [['price', 'ASC']];
           break;
+        case 'priceDesc':
         case 'price-desc':
-          sort = { price: -1 };
+          orderClause = [['price', 'DESC']];
           break;
         case 'rating':
-          sort = { 'rating.average': -1 };
+          // Note: This assumes rating is stored as a JSON field
+          orderClause = [['rating', 'DESC']];
+          break;
+        case 'newest':
+          orderClause = [['created_at', 'DESC']];
           break;
         case 'featured':
-          sort = { featured: -1, createdAt: -1 };
+              orderClause = [['featured', 'DESC'], ['created_at', 'DESC']];
           break;
+        default:
+          orderClause = [['created_at', 'DESC']];
       }
     }
 
     const rooms = await Room.findAll({
-      where: filter,
+      where: whereClause,
       include: [{
         model: User,
         as: 'owner',
         attributes: ['name', 'email', 'phone']
       }],
-      order: Object.entries(sort).map(([key, direction]) => [
-        key === 'createdAt' ? 'created_at' : 
-        key === 'updatedAt' ? 'updated_at' : 
-        key === 'roomType' ? 'room_type' :
-        key === 'maxGuests' ? 'max_guests' :
-        key === 'isActive' ? 'is_active' :
-        key === 'ownerId' ? 'owner_id' : key, 
-        direction === -1 ? 'DESC' : 'ASC'
-      ]),
-      offset: skip,
-      limit: limit
+      order: orderClause,
+      offset: offset,
+      limit: parseInt(limit)
     });
 
-    const total = await Room.count({ where: filter });
+    const total = await Room.count({ where: whereClause });
 
     res.json({
       success: true,
@@ -99,6 +137,143 @@ router.get('/', optionalAuth, validatePagination, handleValidationErrors, async 
     res.status(500).json({
       success: false,
       message: 'Error fetching rooms'
+    });
+  }
+});
+
+// @desc    Get rooms pending approval (Admin only)
+// @route   GET /api/rooms/pending
+// @access  Private (Admin)
+router.get('/pending', protect, authorize('admin'), async (req, res) => {
+  try {
+    const rooms = await Room.findAll({
+      where: { approvalStatus: 'pending' },
+      include: [{
+        model: User,
+        as: 'categoryOwner',
+        attributes: ['name', 'email', 'phone']
+      }],
+      order: [['created_at', 'ASC']]
+    });
+
+    res.json({
+      success: true,
+      count: rooms.length,
+      data: rooms
+    });
+  } catch (error) {
+    console.error('Get pending rooms error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching pending rooms'
+    });
+  }
+});
+
+// @desc    Get owner's rooms
+// @route   GET /api/rooms/owner/my-rooms
+// @access  Private (Owner/Admin)
+router.get('/owner/my-rooms', protect, authorize('owner', 'admin'), async (req, res) => {
+  try {
+    const rooms = await Room.findAll({
+      where: { 
+        ownerId: req.user.id
+      },
+      include: [{
+        model: User,
+        as: 'owner',
+        attributes: ['name', 'email', 'phone']
+      }],
+      order: [['created_at', 'DESC']]
+    });
+
+    res.json({
+      success: true,
+      count: rooms.length,
+      data: rooms
+    });
+  } catch (error) {
+    console.error('Get my rooms error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching your rooms'
+    });
+  }
+});
+
+// @desc    Get owner statistics
+// @route   GET /api/rooms/owner/stats
+// @access  Private (Owner/Admin)
+router.get('/owner/stats', protect, authorize('owner', 'admin'), async (req, res) => {
+  try {
+    const totalProperties = await Room.count({ where: { ownerId: req.user.id } });
+    const activeProperties = await Room.count({ 
+      where: { 
+        ownerId: req.user.id, 
+        isActive: true 
+      } 
+    });
+    const approvedProperties = await Room.count({ 
+      where: { 
+        ownerId: req.user.id, 
+        approvalStatus: 'approved' 
+      } 
+    });
+    const pendingProperties = await Room.count({ 
+      where: { 
+        ownerId: req.user.id, 
+        approvalStatus: 'pending' 
+      } 
+    });
+
+    res.json({
+      success: true,
+      data: {
+        totalProperties,
+        activeProperties,
+        approvedProperties,
+        pendingProperties
+      }
+    });
+  } catch (error) {
+    console.error('Get owner stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching owner statistics'
+    });
+  }
+});
+
+// @desc    Get admin statistics
+// @route   GET /api/rooms/admin/stats
+// @access  Private (Admin)
+router.get('/admin/stats', protect, authorize('admin'), async (req, res) => {
+  try {
+    const totalRooms = await Room.count();
+    const approvedRooms = await Room.count({ where: { approvalStatus: 'approved' } });
+    const pendingRooms = await Room.count({ where: { approvalStatus: 'pending' } });
+    const rejectedRooms = await Room.count({ where: { approvalStatus: 'rejected' } });
+    const categoryOwnedRooms = await Room.count({ 
+      where: { 
+        categoryOwnerId: { [Op.ne]: null } 
+      } 
+    });
+
+    res.json({
+      success: true,
+      data: {
+        totalRooms,
+        approvedRooms,
+        pendingRooms,
+        rejectedRooms,
+        categoryOwnedRooms
+      }
+    });
+  } catch (error) {
+    console.error('Get admin stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching admin statistics'
     });
   }
 });
@@ -148,9 +323,61 @@ router.get('/:id', validateObjectId('id'), handleValidationErrors, async (req, r
 // @access  Private (Owner/Admin)
 router.post('/', protect, authorize('owner', 'admin'), validateRoom, handleValidationErrors, async (req, res) => {
   try {
+    // Handle legacy location format (convert string to object if needed)
+    let locationData = req.body.location;
+    if (typeof locationData === 'string') {
+      locationData = {
+        address: locationData,
+        city: req.body.city || '',
+        state: '',
+        pincode: '',
+        coordinates: { lat: 0, lng: 0 }
+      };
+    } else if (!locationData) {
+      locationData = {
+        address: req.body.address || '',
+        city: req.body.city || '',
+        state: req.body.state || '',
+        pincode: req.body.pincode || '',
+        coordinates: { lat: 0, lng: 0 }
+      };
+    }
+
+    // Determine roomType from category if not provided
+    let roomType = req.body.roomType;
+    if (!roomType) {
+      if (req.body.category === 'Hotel Room') {
+        roomType = 'Hotel Room';
+      } else if (req.body.category === 'PG') {
+        roomType = 'PG';
+      } else if (req.body.propertyType) {
+        roomType = req.body.propertyType === 'entire_place' ? 'Entire Place' : 'Private Room';
+      } else {
+        roomType = 'Private Room';
+      }
+    }
+
     const roomData = {
-      ...req.body,
-      owner: req.user._id
+      title: req.body.title,
+      description: req.body.description,
+      category: req.body.category,
+      roomType: roomType,
+      location: locationData,
+      price: req.body.price || 0,
+      maxGuests: req.body.maxGuests || 1,
+      amenities: req.body.amenities || [],
+      images: req.body.images || [],
+      rules: req.body.rules || [],
+      ownerId: req.user.id,
+      approvalStatus: 'approved',
+      rating: req.body.rating || { average: 0, count: 0 },
+      availability: req.body.availability || { isAvailable: true },
+      // Category-specific fields
+      pricingType: req.body.pricingType || null,
+      pgOptions: req.body.pgOptions || null,
+      hotelRoomTypes: req.body.hotelRoomTypes || [],
+      hotelPrices: req.body.hotelPrices || null,
+      propertyDetails: req.body.propertyDetails || null
     };
 
     const room = await Room.create(roomData);
@@ -164,7 +391,8 @@ router.post('/', protect, authorize('owner', 'admin'), validateRoom, handleValid
     console.error('Create room error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error creating room'
+      message: 'Error creating room',
+      error: error.message
     });
   }
 });
@@ -184,28 +412,38 @@ router.put('/:id', protect, authorize('owner', 'admin'), validateObjectId('id'),
     }
 
     // Check if user owns the room or is admin
-    if (room.owner.toString() !== req.user._id && req.user.role !== 'admin') {
+    if (room.ownerId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to update this room'
       });
     }
 
-    room = await Room.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true
+    // Update the room
+    await room.update(req.body);
+
+    // Fetch the updated room with owner info
+    const updatedRoom = await Room.findByPk(req.params.id, {
+      include: [
+        {
+          model: require('../models/User'),
+          as: 'owner',
+          attributes: ['id', 'name', 'email', 'phone']
+        }
+      ]
     });
 
     res.json({
       success: true,
       message: 'Room updated successfully',
-      data: room
+      data: updatedRoom
     });
   } catch (error) {
     console.error('Update room error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error updating room'
+      message: 'Error updating room',
+      error: error.message
     });
   }
 });
@@ -225,14 +463,14 @@ router.delete('/:id', protect, authorize('owner', 'admin'), validateObjectId('id
     }
 
     // Check if user owns the room or is admin
-    if (room.owner.toString() !== req.user._id && req.user.role !== 'admin') {
+    if (room.ownerId !== req.user.id && req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to delete this room'
       });
     }
 
-    await Room.findByIdAndDelete(req.params.id);
+    await room.destroy();
 
     res.json({
       success: true,
@@ -247,26 +485,102 @@ router.delete('/:id', protect, authorize('owner', 'admin'), validateObjectId('id
   }
 });
 
-// @desc    Get rooms by owner
-// @route   GET /api/rooms/owner/my-rooms
-// @access  Private (Owner)
-router.get('/owner/my-rooms', protect, authorize('owner', 'admin'), async (req, res) => {
+// @desc    Create room (Category Owner or Admin)
+// @route   POST /api/rooms
+// @access  Private (Category Owner, Admin)
+router.post('/', protect, authorize('category_owner', 'admin'), validateRoom, handleValidationErrors, async (req, res) => {
   try {
-    const rooms = await Room.findAll({
-      where: { ownerId: req.user.id },
-      order: [['created_at', 'DESC']]
+    const roomData = {
+      ...req.body,
+      ownerId: req.user.id,
+      categoryOwnerId: req.user.role === 'category_owner' ? req.user.id : null,
+      approvalStatus: 'approved', // Auto-approval for now
+      approvedAt: new Date(),
+      approvedBy: req.user.role === 'admin' ? req.user.id : null
+    };
+
+    const room = await Room.create(roomData);
+
+    res.status(201).json({
+      success: true,
+      message: 'Room created successfully',
+      data: room
+    });
+  } catch (error) {
+    console.error('Create room error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating room'
+    });
+  }
+});
+
+// @desc    Approve room (Admin only)
+// @route   PUT /api/rooms/:id/approve
+// @access  Private (Admin)
+router.put('/:id/approve', protect, authorize('admin'), validateObjectId('id'), handleValidationErrors, async (req, res) => {
+  try {
+    const room = await Room.findByPk(req.params.id);
+    
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: 'Room not found'
+      });
+    }
+
+    await room.update({
+      approvalStatus: 'approved',
+      approvedAt: new Date(),
+      approvedBy: req.user.id,
+      rejectionReason: null
     });
 
     res.json({
       success: true,
-      count: rooms.length,
-      data: rooms
+      message: 'Room approved successfully',
+      data: room
     });
   } catch (error) {
-    console.error('Get owner rooms error:', error);
+    console.error('Approve room error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching your rooms'
+      message: 'Error approving room'
+    });
+  }
+});
+
+// @desc    Reject room (Admin only)
+// @route   PUT /api/rooms/:id/reject
+// @access  Private (Admin)
+router.put('/:id/reject', protect, authorize('admin'), validateObjectId('id'), handleValidationErrors, async (req, res) => {
+  try {
+    const { rejectionReason } = req.body;
+    
+    const room = await Room.findByPk(req.params.id);
+    
+    if (!room) {
+      return res.status(404).json({
+        success: false,
+        message: 'Room not found'
+      });
+    }
+
+    await room.update({
+      approvalStatus: 'rejected',
+      rejectionReason: rejectionReason || 'Room does not meet our standards'
+    });
+
+    res.json({
+      success: true,
+      message: 'Room rejected successfully',
+      data: room
+    });
+  } catch (error) {
+    console.error('Reject room error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error rejecting room'
     });
   }
 });

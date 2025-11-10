@@ -1,6 +1,17 @@
 import apiService from './api';
 
 class BookingService {
+  // Create a guest booking (without authentication)
+  async createGuestBooking(bookingData) {
+    try {
+      const response = await apiService.post('/bookings/guest', bookingData);
+      return response;
+    } catch (error) {
+      console.error('Error creating guest booking:', error);
+      throw error;
+    }
+  }
+
   // Create a new booking
   async createBooking(bookingData) {
     try {

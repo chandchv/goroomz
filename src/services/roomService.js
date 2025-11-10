@@ -109,6 +109,67 @@ class RoomService {
       throw error;
     }
   }
+
+  // Admin methods
+  async getMyRooms() {
+    try {
+      const response = await apiService.get('/rooms?owner=me');
+      return response;
+    } catch (error) {
+      console.error('Error fetching my rooms:', error);
+      throw error;
+    }
+  }
+
+  async createRoom(roomData) {
+    try {
+      const response = await apiService.post('/rooms', roomData);
+      return response;
+    } catch (error) {
+      console.error('Error creating room:', error);
+      throw error;
+    }
+  }
+
+  async updateRoom(id, roomData) {
+    try {
+      const response = await apiService.put(`/rooms/${id}`, roomData);
+      return response;
+    } catch (error) {
+      console.error('Error updating room:', error);
+      throw error;
+    }
+  }
+
+  async deleteRoom(id) {
+    try {
+      const response = await apiService.delete(`/rooms/${id}`);
+      return response;
+    } catch (error) {
+      console.error('Error deleting room:', error);
+      throw error;
+    }
+  }
+
+  async approveRoom(id) {
+    try {
+      const response = await apiService.put(`/rooms/${id}/approve`);
+      return response;
+    } catch (error) {
+      console.error('Error approving room:', error);
+      throw error;
+    }
+  }
+
+  async rejectRoom(id, reason) {
+    try {
+      const response = await apiService.put(`/rooms/${id}/reject`, { rejectionReason: reason });
+      return response;
+    } catch (error) {
+      console.error('Error rejecting room:', error);
+      throw error;
+    }
+  }
 }
 
 export default new RoomService();

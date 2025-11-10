@@ -25,10 +25,10 @@ const Room = sequelize.define('Room', {
   },
   price: {
     type: DataTypes.DECIMAL(10, 2),
-    allowNull: false,
+    allowNull: true,
+    defaultValue: 0,
     validate: {
-      min: 0,
-      notNull: true
+      min: 0
     }
   },
   location: {
@@ -39,8 +39,9 @@ const Room = sequelize.define('Room', {
     }
   },
   roomType: {
-    type: DataTypes.ENUM('Private Room', 'Shared Room', 'Entire Place', 'Studio'),
-    allowNull: false
+    type: DataTypes.ENUM('Private Room', 'Shared Room', 'Entire Place', 'Studio', 'Hotel Room', 'PG'),
+    allowNull: true,
+    defaultValue: 'Private Room'
   },
   category: {
     type: DataTypes.ENUM('PG', 'Hotel Room', 'Independent Home', 'Home Stay'),
@@ -48,11 +49,11 @@ const Room = sequelize.define('Room', {
   },
   maxGuests: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true,
+    defaultValue: 1,
     validate: {
       min: 1,
-      max: 10,
-      notNull: true
+      max: 20
     }
   },
   amenities: {
@@ -142,6 +143,61 @@ const Room = sequelize.define('Room', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
     allowNull: false
+  },
+  approvalStatus: {
+    type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+    defaultValue: 'approved', // Auto-approval for now
+    allowNull: false
+  },
+  approvedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  approvedBy: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'users',
+      key: 'id'
+    }
+  },
+  rejectionReason: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  categoryOwnerId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'users',
+      key: 'id'
+    }
+  },
+  // Category-specific fields
+  pricingType: {
+    type: DataTypes.ENUM('daily', 'monthly'),
+    allowNull: true,
+    comment: 'Pricing model - daily for hotels/homestays, monthly for PG'
+  },
+  pgOptions: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    comment: 'PG-specific options: sharingTypes, securityDeposit, noticePeriod, foodIncluded'
+  },
+  hotelRoomTypes: {
+    type: DataTypes.ARRAY(DataTypes.STRING),
+    defaultValue: [],
+    comment: 'Hotel room types: standard, deluxe, suite, premium'
+  },
+  hotelPrices: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    comment: 'Hotel room type prices: { standard, deluxe, suite, premium }'
+  },
+  propertyDetails: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    comment: 'Property details for homestays/independent homes: bedrooms, bathrooms, propertyType'
   }
 }, {
   tableName: 'rooms',
