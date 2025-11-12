@@ -1,3 +1,4 @@
+const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 const User = require('./User');
 const Room = require('./Room');
@@ -75,9 +76,43 @@ RoomType.belongsTo(Room, {
   as: 'property'
 });
 
+const ensureSchema = async () => {
+  const queryInterface = sequelize.getQueryInterface();
+
+  try {
+    const userTable = await queryInterface.describeTable('users');
+    if (!userTable.firebase_uid) {
+      await queryInterface.addColumn('users', 'firebase_uid', {
+        type: DataTypes.STRING,
+        allowNull: true,
+        unique: true
+      });
+      console.log('✅ Added missing firebase_uid column to users table');
+    }
+
+    if (userTable.password && userTable.password.allowNull === false) {
+      await queryInterface.changeColumn('users', 'password', {
+        type: DataTypes.STRING,
+        allowNull: true,
+        validate: {
+          len: [6, 255]
+        }
+      });
+      console.log('✅ Updated users.password column to allow NULL values');
+    }
+  } catch (error) {
+    if (error?.message?.includes('does not exist')) {
+      console.warn('⚠️ users table not found during schema check, skipping firebase_uid column ensure step');
+    } else {
+      throw error;
+    }
+  }
+};
+
 // Sync database
 const syncDatabase = async (force = false) => {
   try {
+    await ensureSchema();
     await sequelize.sync({ force });
     console.log('✅ Database synchronized successfully');
   } catch (error) {

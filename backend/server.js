@@ -37,7 +37,9 @@ const defaultOrigins = [
   'http://localhost:5173',
   'http://localhost:4173',
   'http://127.0.0.1:3000',
-  'http://127.0.0.1:5173'
+  'http://127.0.0.1:5173',
+  'https://goroomz.in',
+  'https://www.goroomz.in'
 ];
 
 const envOrigins = process.env.FRONTEND_URLS

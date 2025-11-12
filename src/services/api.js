@@ -3,6 +3,10 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 class ApiService {
   constructor() {
     this.baseURL = API_BASE_URL;
+    if (typeof window !== 'undefined') {
+      // temporary debug logging
+      console.log('[ApiService] baseURL:', this.baseURL);
+    }
   }
 
   // Get auth token from localStorage

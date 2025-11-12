@@ -1,4 +1,5 @@
 const { User } = require('../models');
+const { UniqueConstraintError } = require('sequelize');
 const admin = require('../config/firebaseAdmin');
 const { generateToken } = require('../utils/jwt');
 
@@ -8,11 +9,12 @@ exports.firebaseSignIn = async (req, res) => {
   try {
     const decodedToken = await admin.auth().verifyIdToken(token);
     const { uid, email, phone_number, name, picture } = decodedToken;
+    const normalizedEmail = email ? email.toLowerCase() : null;
 
     let user;
     // Prioritize finding user by email if it exists
-    if (email) {
-      user = await User.findOne({ where: { email } });
+    if (normalizedEmail) {
+      user = await User.findOne({ where: { email: normalizedEmail } });
     } else if (phone_number) {
       user = await User.findOne({ where: { phone: phone_number } });
     } else {
@@ -20,22 +22,45 @@ exports.firebaseSignIn = async (req, res) => {
       user = await User.findOne({ where: { firebase_uid: uid } });
     }
 
-    if (user) {
-      // User exists, ensure firebase_uid is set
-      if (!user.firebase_uid) {
-        user.firebase_uid = uid;
-        await user.save();
-      }
-    } else {
+    if (!user) {
       // User does not exist, create a new one
-      user = await User.create({
-        firebase_uid: uid,
-        email: email,
-        phone: phone_number,
-        name: name,
-        avatar: picture,
-        isVerified: true, // All Firebase sign-ins are considered verified
-      });
+      try {
+        user = await User.create({
+          firebase_uid: uid,
+          email: normalizedEmail,
+          phone: phone_number,
+          name,
+          avatar: picture,
+          isVerified: true, // All Firebase sign-ins are considered verified
+        });
+      } catch (createError) {
+        if (createError instanceof UniqueConstraintError && normalizedEmail) {
+          user = await User.findOne({ where: { email: normalizedEmail } });
+        } else {
+          throw createError;
+        }
+      }
+    }
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User record could not be located or created.' });
+    }
+
+    // Ensure firebase_uid is set for existing users
+    let updated = false;
+    if (!user.firebase_uid) {
+      user.firebase_uid = uid;
+      updated = true;
+    }
+
+    // Ensure email is normalized (for legacy records)
+    if (normalizedEmail && user.email !== normalizedEmail) {
+      user.email = normalizedEmail;
+      updated = true;
+    }
+
+    if (updated) {
+      await user.save();
     }
 
     const backendToken = generateToken(user.id);
@@ -61,6 +86,7 @@ exports.firebaseSignIn = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const { name, email, location, firebase_uid } = req.body;
+    const normalizedEmail = email ? email.toLowerCase() : null;
     const user = await User.findOne({ where: { firebase_uid } });
 
     if (!user) {
@@ -68,7 +94,7 @@ exports.updateProfile = async (req, res) => {
     }
 
     user.name = name || user.name;
-    user.email = email || user.email;
+    user.email = normalizedEmail || user.email;
     // You might want to add a 'location' field to your User model
     // For now, we'll just log it.
     console.log('User location:', location);

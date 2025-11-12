@@ -3,7 +3,6 @@ import { toast } from '@/components/ui/use-toast';
 import { auth } from '@/firebase';
 import { 
   createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
   GoogleAuthProvider, 
   signInWithPopup,
   signOut,
@@ -17,8 +16,51 @@ import apiService from '@/services/api';
 
 const AuthContext = createContext(null);
 
+const AUTH_PROVIDER_KEY = 'goroomz_auth_provider';
+
+const setAuthProvider = (provider) => {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(AUTH_PROVIDER_KEY, provider);
+};
+
+const getAuthProvider = () => {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(AUTH_PROVIDER_KEY);
+};
+
+const clearAuthProvider = () => {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(AUTH_PROVIDER_KEY);
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
+
+  // Restore backend-authenticated session on mount
+  useEffect(() => {
+    const restoreSession = async () => {
+      const storedProvider = getAuthProvider();
+      const hasToken = !!apiService.getToken();
+
+      if (storedProvider === 'local' && hasToken) {
+        try {
+          const response = await apiService.getCurrentUser();
+          if (response.success) {
+            setUser(response.user);
+          } else {
+            throw new Error(response.message || 'Failed to restore session');
+          }
+        } catch (error) {
+          console.error('Backend session restore failed:', error);
+          apiService.removeToken();
+          clearAuthProvider();
+          setUser(null);
+        }
+      }
+    };
+
+    restoreSession();
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -27,24 +69,31 @@ export const AuthProvider = ({ children }) => {
           const token = await firebaseUser.getIdToken();
           const response = await apiService.post('/users/firebase-signin', { token });
 
-          if (response.data.success) {
-            const { user: backendUser, token: backendToken } = response.data;
+          if (response?.success) {
+            const { user: backendUser, token: backendToken } = response;
             setUser(backendUser);
             apiService.setToken(backendToken);
+            setAuthProvider('firebase');
           } else {
-            throw new Error(response.data.message || 'Backend session restore failed');
+            throw new Error(response?.message || 'Backend session restore failed');
           }
         } catch (error) {
           console.error("Session restore error:", error);
           // If session restore fails, sign the user out to clear state
           await signOut(auth);
+          if (getAuthProvider() === 'firebase') {
+            apiService.removeToken();
+            clearAuthProvider();
+          }
           setUser(null);
-          apiService.removeToken();
         }
       } else {
-        // User is signed out
-        setUser(null);
-        apiService.removeToken();
+        // Only clear backend session if it originated from a Firebase login
+        if (getAuthProvider() === 'firebase') {
+          setUser(null);
+          apiService.removeToken();
+          clearAuthProvider();
+        }
       }
     });
 
@@ -53,10 +102,18 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      toast({ title: `Welcome back! 👋` });
-      return userCredential.user;
+      const response = await apiService.login(email, password);
+
+      if (response.success) {
+        setUser(response.user);
+        setAuthProvider('local');
+        toast({ title: `Welcome back! 👋` });
+        return response.user;
+      }
+
+      throw new Error(response.message || 'Invalid email or password.');
     } catch (error) {
+      console.error('Backend login failed:', error);
       toast({
         title: "Login Failed",
         description: error.message || "Invalid email or password.",
@@ -92,14 +149,15 @@ export const AuthProvider = ({ children }) => {
 
       const response = await apiService.post('/users/firebase-signin', { token });
 
-      if (response.data.success) {
-        const { user: backendUser, token: backendToken } = response.data;
+      if (response?.success) {
+        const { user: backendUser, token: backendToken } = response;
         setUser(backendUser);
         apiService.setToken(backendToken);
+        setAuthProvider('firebase');
         toast({ title: `Welcome, ${backendUser.name}! 🎉` });
         return backendUser;
       } else {
-        throw new Error(response.data.message || 'Backend Google sign-in failed');
+        throw new Error(response?.message || 'Backend Google sign-in failed');
       }
     } catch (error) {
       console.error("Google Sign-In error:", error);
@@ -114,7 +172,13 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      await signOut(auth);
+      const provider = getAuthProvider();
+      if (provider === 'firebase') {
+        await signOut(auth);
+      }
+      await apiService.logout();
+      clearAuthProvider();
+      setUser(null);
       toast({ title: "You've been logged out." });
     } catch (error) {
       console.error('Logout error:', error);
@@ -162,14 +226,15 @@ export const AuthProvider = ({ children }) => {
 
       const response = await apiService.post('/users/firebase-signin', { token });
 
-      if (response.data.success) {
-        const { user: backendUser, token: backendToken } = response.data;
+      if (response?.success) {
+        const { user: backendUser, token: backendToken } = response;
         setUser(backendUser);
         apiService.setToken(backendToken);
+        setAuthProvider('firebase');
         toast({ title: "Phone number verified successfully!" });
         return backendUser;
       } else {
-        throw new Error(response.data.message || 'Backend phone sign-in failed');
+        throw new Error(response?.message || 'Backend phone sign-in failed');
       }
     } catch (error) {
       console.error("Error verifying OTP:", error);
