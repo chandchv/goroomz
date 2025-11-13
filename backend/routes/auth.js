@@ -23,9 +23,10 @@ const generateToken = (id) => {
 router.post('/register', validateUserRegistration, handleValidationErrors, async (req, res) => {
   try {
     const { name, email, password, phone } = req.body;
+    const normalizedEmail = email.toLowerCase();
 
     // Check if user already exists
-    const existingUser = await User.findOne({ where: { email } });
+    const existingUser = await User.findOne({ where: { email: normalizedEmail } });
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -36,7 +37,7 @@ router.post('/register', validateUserRegistration, handleValidationErrors, async
     // Create user
     const user = await User.create({
       name,
-      email,
+      email: normalizedEmail,
       password,
       phone
     });
@@ -71,9 +72,10 @@ router.post('/register', validateUserRegistration, handleValidationErrors, async
 router.post('/login', validateUserLogin, handleValidationErrors, async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = email.toLowerCase();
 
     // Find user and include password
-    const user = await User.findOne({ where: { email } });
+    const user = await User.findOne({ where: { email: normalizedEmail } });
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -238,8 +240,8 @@ router.put('/password', protect, async (req, res) => {
 
 // @desc    Logout user (client-side token removal)
 // @route   POST /api/auth/logout
-// @access  Private
-router.post('/logout', protect, (req, res) => {
+// @access  Public (no token required for logout)
+router.post('/logout', (req, res) => {
   res.json({
     success: true,
     message: 'Logged out successfully'

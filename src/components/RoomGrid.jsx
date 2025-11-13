@@ -2,7 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import RoomCard from '@/components/RoomCard';
 
-const RoomGrid = ({ rooms, onRoomClick }) => {
+const RoomGrid = ({ rooms, onRoomClick, viewMode = 'grid' }) => {
   if (rooms.length === 0) {
     return (
       <motion.div 
@@ -20,13 +20,17 @@ const RoomGrid = ({ rooms, onRoomClick }) => {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div className={viewMode === 'grid' 
+      ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+      : "space-y-4"
+    }>
       {rooms.map((room, index) => (
         <RoomCard 
           key={room.id} 
           room={room} 
           onClick={() => onRoomClick(room)}
           index={index}
+          viewMode={viewMode}
         />
       ))}
     </div>

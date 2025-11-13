@@ -641,6 +641,10 @@ const seedDatabase = async () => {
     await seedRooms();
     
     console.log('✅ Database seeding completed successfully!');
+    
+    // Close database connection properly
+    const { sequelize } = require('../models');
+    await sequelize.close();
     process.exit(0);
   } catch (error) {
     console.error('❌ Database seeding failed:', error);

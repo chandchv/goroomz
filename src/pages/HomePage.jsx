@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import HeroImage from '@/components/HeroImage';
-import SearchBar from '@/components/SearchBar';
+import { useNavigate } from 'react-router-dom';
 import RoomGrid from '@/components/RoomGrid';
 import CallToAction from '@/components/CallToAction';
 import WelcomeMessage from '@/components/WelcomeMessage';
@@ -15,10 +15,10 @@ import roomService from '@/services/roomService';
 import categoryService from '@/services/categoryService';
 
 const HomePage = () => {
+  const navigate = useNavigate();
   const [featuredRooms, setFeaturedRooms] = useState([]);
   const [categories, setCategories] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const loadHomeData = async () => {
@@ -32,7 +32,7 @@ const HomePage = () => {
         ]);
 
         if (featuredResponse.success) {
-          setFeaturedRooms(featuredResponse.data);
+          setFeaturedRooms(featuredResponse.data || []);
         }
 
         if (categoriesResponse.success) {
@@ -54,9 +54,12 @@ const HomePage = () => {
     loadHomeData();
   }, []);
 
-  const handleSearch = (query) => {
-    setSearchQuery(query);
-    // Redirect to search results or filter rooms
+  const handleExploreCategories = () => {
+    // Scroll to categories section
+    const categoriesSection = document.getElementById('categories-section');
+    if (categoriesSection) {
+      categoriesSection.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
   const getAmenityIcon = (amenity) => {
@@ -66,6 +69,11 @@ const HomePage = () => {
       meals: <Utensils className="w-4 h-4" />,
     };
     return icons[amenity] || <Star className="w-4 h-4" />;
+  };
+
+  const handleRoomClick = (room) => {
+    // Navigate to property detail page
+    navigate(`/property/${room.id}`);
   };
 
   if (isLoading) {
@@ -87,23 +95,59 @@ const HomePage = () => {
       </Helmet>
 
       {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
+      <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
         <HeroImage />
-        <div className="relative z-10 text-center px-4 max-w-4xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-          >
-            <h1 className="text-5xl md:text-7xl font-bold mb-6 gradient-text">
-              Find Your Perfect Room
-            </h1>
-            <p className="text-xl md:text-2xl text-white/90 mb-8 max-w-2xl mx-auto">
-              Discover amazing accommodations across India. From cozy PGs to luxury apartments, 
-              find your ideal stay with GoRoomz.
-            </p>
-            <SearchBar onSearch={handleSearch} />
-          </motion.div>
+        
+        {/* Content positioned better - not hidden in corner */}
+        <div className="absolute inset-0 flex items-center justify-center z-20">
+          <div className="text-center px-4 max-w-5xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8 }}
+              className="bg-white/95 backdrop-blur-sm rounded-3xl p-8 md:p-12 shadow-2xl border border-white/20"
+            >
+              <h1 className="text-4xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                Find Your Perfect Room
+              </h1>
+              <p className="text-lg md:text-xl text-purple-700 mb-6 max-w-3xl mx-auto font-medium">
+                Discover amazing accommodations across India. From cozy PGs to luxury apartments, 
+                find your ideal stay with GoRoomz.
+              </p>
+              <p className="text-sm text-purple-600 mb-8 max-w-2xl mx-auto bg-purple-50 px-4 py-3 rounded-xl border border-purple-200">
+                💡 Use the search bar above to find rooms by location, category, or keywords
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Button 
+                    size="lg" 
+                    className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-semibold px-8 py-3 text-lg shadow-xl"
+                    onClick={handleExploreCategories}
+                  >
+                    <Search className="w-5 h-5 mr-2" />
+                    Explore Rooms
+                  </Button>
+                </motion.div>
+                <motion.div
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Button 
+                    variant="outline" 
+                    size="lg"
+                    className="border-2 border-purple-600 text-purple-600 hover:bg-purple-600 hover:text-white font-semibold px-8 py-3 text-lg bg-transparent shadow-lg"
+                    onClick={() => navigate('/search')}
+                  >
+                    <MapPin className="w-5 h-5 mr-2" />
+                    Search by Location
+                  </Button>
+                </motion.div>
+              </div>
+            </motion.div>
+          </div>
         </div>
       </section>
 
@@ -111,7 +155,7 @@ const HomePage = () => {
       <WelcomeMessage />
 
       {/* Categories Section */}
-      <section className="py-20 bg-gray-50">
+      <section id="categories-section" className="py-20 bg-gray-50">
         <div className="container mx-auto px-4">
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -183,7 +227,7 @@ const HomePage = () => {
           </motion.div>
 
           {featuredRooms.length > 0 ? (
-            <RoomGrid rooms={featuredRooms} />
+            <RoomGrid rooms={featuredRooms} onRoomClick={handleRoomClick} />
           ) : (
             <div className="text-center py-16">
               <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">

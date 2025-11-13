@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Home, Menu, X, Building, BedDouble, Shield, LogOut, UserCircle } from 'lucide-react';
+import { Home, Menu, X, Building, BedDouble, Shield, LogOut, UserCircle, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { NavLink, Link } from 'react-router-dom';
 import {
@@ -11,14 +11,18 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { useAuth } from '@/hooks/useAuth';
+import CategoryOwnerSignupModal from '@/components/CategoryOwnerSignupModal';
+import HomeSearchBar from '@/components/HomeSearchBar';
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
   const { user, logout } = useAuth();
 
   const navLinks = [
     { name: 'Home', path: '/' },
     ...(user?.role === 'admin' ? [{ name: 'Admin Panel', path: '/admin' }] : []),
+    ...(user?.role === 'owner' ? [{ name: 'My Dashboard', path: '/owner/dashboard' }] : []),
   ];
 
   const categories = [
@@ -29,12 +33,10 @@ const Header = () => {
   ];
 
   return (
-    <motion.header 
-      initial={{ y: -100 }}
-      animate={{ y: 0 }}
-      className="glass-effect sticky top-0 z-50 border-b"
-    >
-      <div className="container mx-auto px-4 py-4">
+    <>
+      {/* Main Header - Always visible */}
+      <header className="bg-white/95 backdrop-blur-sm sticky top-0 z-40 border-b border-gray-200 shadow-sm">
+      <div className="container mx-auto px-4 py-2">
         <div className="flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
             <motion.div whileHover={{ scale: 1.02 }}>
@@ -43,8 +45,8 @@ const Header = () => {
               </div>
             </motion.div>
             <div>
-              <h1 className="text-2xl font-bold gradient-text">GoRoomz</h1>
-              <p className="text-sm text-muted-foreground">Find Your Perfect room</p>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">GoRoomz</h1>
+              <p className="text-sm text-gray-600">Find Your Perfect room</p>
             </div>
           </Link>
 
@@ -54,14 +56,14 @@ const Header = () => {
                 key={link.name} 
                 to={link.path}
                 className={({ isActive }) => 
-                  `font-semibold transition-colors ${isActive ? 'gradient-text' : 'text-muted-foreground hover:text-foreground'}`
+                  `font-semibold transition-colors ${isActive ? 'bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent' : 'text-gray-600 hover:text-purple-600'}`
                 }
               >
                 {link.name}
               </NavLink>
             ))}
             <DropdownMenu>
-              <DropdownMenuTrigger className="font-semibold text-muted-foreground hover:text-foreground flex items-center focus:outline-none">Categories</DropdownMenuTrigger>
+              <DropdownMenuTrigger className="font-semibold text-gray-600 hover:text-purple-600 flex items-center focus:outline-none">Categories</DropdownMenuTrigger>
               <DropdownMenuContent>
                 {categories.map(cat => (
                   <DropdownMenuItem key={cat.name} asChild>
@@ -91,22 +93,35 @@ const Header = () => {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            ) : (
-              <div className="hidden md:flex items-center gap-2">
-                <Button variant="ghost" asChild>
-                  <Link to="/login">Login</Link>
-                </Button>
-                <Button asChild>
-                  <Link to="/signup">Sign Up</Link>
-                </Button>
-              </div>
-            )}
+                ) : (
+                  <div className="hidden md:flex items-center gap-2">
+                    <Button variant="ghost" asChild className="text-gray-600 hover:text-purple-600">
+                      <Link to="/login">Login</Link>
+                    </Button>
+                    <Button asChild className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white">
+                      <Link to="/signup">Sign Up</Link>
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => setIsSignupModalOpen(true)}
+                      className="border-purple-600 text-purple-600 hover:bg-purple-600 hover:text-white"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      List Property
+                    </Button>
+                  </div>
+                )}
             <div className="md:hidden">
-              <Button variant="ghost" size="icon" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+              <Button variant="ghost" size="icon" onClick={() => setIsMenuOpen(!isMenuOpen)} className="text-gray-600 hover:text-purple-600">
                 {isMenuOpen ? <X /> : <Menu />}
               </Button>
             </div>
           </div>
+        </div>
+
+        {/* Search Bar Section */}
+        <div className="mt-3 pb-2">
+          <HomeSearchBar compact={true} />
         </div>
       </div>
       {isMenuOpen && (
@@ -116,30 +131,49 @@ const Header = () => {
           exit={{ opacity: 0, height: 0 }}
           className="md:hidden"
         >
-          <nav className="flex flex-col items-center gap-4 py-4 border-t">
+          <nav className="flex flex-col items-center gap-3 py-3 border-t">
+            
             {navLinks.map(link => (
-              <NavLink key={link.name} to={link.path} onClick={() => setIsMenuOpen(false)} className={({ isActive }) => `font-semibold ${isActive ? 'gradient-text' : 'text-muted-foreground'}`}>{link.name}</NavLink>
+              <NavLink key={link.name} to={link.path} onClick={() => setIsMenuOpen(false)} className={({ isActive }) => `font-semibold ${isActive ? 'bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent' : 'text-gray-600 hover:text-purple-600'}`}>{link.name}</NavLink>
             ))}
-            <h3 className="font-bold mt-2">Categories</h3>
+            <h3 className="font-bold mt-2 text-gray-800">Categories</h3>
             {categories.map(cat => (
-              <Link key={cat.name} to={cat.path} onClick={() => setIsMenuOpen(false)} className="text-muted-foreground flex items-center">
+              <Link key={cat.name} to={cat.path} onClick={() => setIsMenuOpen(false)} className="text-gray-600 hover:text-purple-600 flex items-center">
                 {cat.icon}
                 {cat.name}
               </Link>
             ))}
             <DropdownMenuSeparator className="my-2" />
             {user ? (
-              <Button variant="ghost" onClick={() => { logout(); setIsMenuOpen(false); }}>Logout</Button>
-            ) : (
-              <>
-                <Button variant="ghost" asChild><Link to="/login" onClick={() => setIsMenuOpen(false)}>Login</Link></Button>
-                <Button asChild><Link to="/signup" onClick={() => setIsMenuOpen(false)}>Sign Up</Link></Button>
-              </>
-            )}
+              <Button variant="ghost" onClick={() => { logout(); setIsMenuOpen(false); }} className="text-gray-600 hover:text-purple-600">Logout</Button>
+                ) : (
+                  <>
+                    <Button variant="ghost" asChild className="text-gray-600 hover:text-purple-600"><Link to="/login" onClick={() => setIsMenuOpen(false)}>Login</Link></Button>
+                    <Button asChild className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"><Link to="/signup" onClick={() => setIsMenuOpen(false)}>Sign Up</Link></Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => { setIsSignupModalOpen(true); setIsMenuOpen(false); }}
+                      className="border-purple-600 text-purple-600 hover:bg-purple-600 hover:text-white"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      List Property
+                    </Button>
+                  </>
+                )}
           </nav>
         </motion.div>
       )}
-    </motion.header>
+      </header>
+
+      {/* Category Owner Signup Modal */}
+      <CategoryOwnerSignupModal
+        isOpen={isSignupModalOpen}
+        onClose={() => setIsSignupModalOpen(false)}
+        onSuccess={(userData) => {
+          console.log('Category owner created:', userData);
+        }}
+      />
+    </>
   );
 };
 

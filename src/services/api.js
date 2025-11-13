@@ -3,6 +3,10 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 class ApiService {
   constructor() {
     this.baseURL = API_BASE_URL;
+    if (typeof window !== 'undefined') {
+      // temporary debug logging
+      console.log('[ApiService] baseURL:', this.baseURL);
+    }
   }
 
   // Get auth token from localStorage
@@ -46,6 +50,12 @@ class ApiService {
       const data = await response.json();
 
       if (!response.ok) {
+        // Log validation errors for debugging
+        if (data.errors && Array.isArray(data.errors)) {
+          console.error('Validation errors:', data.errors);
+          const errorMessages = data.errors.map(err => err.msg).join(', ');
+          throw new Error(errorMessages || data.message || `HTTP error! status: ${response.status}`);
+        }
         throw new Error(data.message || `HTTP error! status: ${response.status}`);
       }
 
@@ -54,6 +64,66 @@ class ApiService {
       console.error('API Request failed:', error);
       throw error;
     }
+  }
+
+  // Generic HTTP method shortcuts
+  async get(endpoint, options = {}) {
+    return this.request(endpoint, { method: 'GET', ...options });
+  }
+
+  async post(endpoint, data, options = {}) {
+    return this.request(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(data),
+      ...options,
+    });
+  }
+
+  // Special method for file uploads (like CSV import)
+  async postFormData(endpoint, formData, options = {}) {
+    const url = `${this.baseURL}${endpoint}`;
+    const headers = this.getHeaders(options.includeAuth !== false);
+    
+    // Remove Content-Type header for FormData (browser will set it with boundary)
+    delete headers['Content-Type'];
+    
+    const config = {
+      method: 'POST',
+      headers,
+      body: formData,
+      ...options,
+    };
+
+    try {
+      const response = await fetch(url, config);
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (data.errors && Array.isArray(data.errors)) {
+          console.error('Validation errors:', data.errors);
+          const errorMessages = data.errors.map(err => err.msg).join(', ');
+          throw new Error(errorMessages || data.message || `HTTP error! status: ${response.status}`);
+        }
+        throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      }
+
+      return data;
+    } catch (error) {
+      console.error('API Request failed:', error);
+      throw error;
+    }
+  }
+
+  async put(endpoint, data, options = {}) {
+    return this.request(endpoint, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+      ...options,
+    });
+  }
+
+  async delete(endpoint, options = {}) {
+    return this.request(endpoint, { method: 'DELETE', ...options });
   }
 
   // Auth endpoints

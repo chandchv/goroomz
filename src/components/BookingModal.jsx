@@ -64,9 +64,20 @@ const BookingModal = ({ room, isOpen, onClose, onBook }) => {
 
             <form onSubmit={handleSubmit} className="p-6 space-y-6">
               <div className="p-4 bg-gradient-to-r from-purple-100 to-pink-100 rounded-2xl">
-                <h3 className="font-bold text-lg mb-1">{room.title}</h3>
-                <p className="text-sm text-muted-foreground">{room.location}, {room.city}</p>
-                <p className="text-2xl font-bold gradient-text mt-2">₹{room.price}/month</p>
+                <h3 className="font-bold text-lg mb-1">{room.displayTitle || room.title}</h3>
+                {room.roomTypeLabel && (
+                  <p className="text-xs font-semibold text-purple-700 mb-1">
+                    {room.roomTypeLabel}
+                  </p>
+                )}
+                <p className="text-sm text-muted-foreground">
+                  {typeof room.location === 'object' 
+                    ? `${room.location?.city || ''}, ${room.location?.state || ''}`.replace(/^,\s*|,\s*$/g, '')
+                    : room.location}
+                </p>
+                <p className="text-2xl font-bold gradient-text mt-2">
+                  ₹{room.price}/{room.pricingType === 'daily' ? 'night' : 'month'}
+                </p>
               </div>
 
               <div className="space-y-2">

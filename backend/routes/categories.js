@@ -1,4 +1,5 @@
 const express = require('express');
+const { Op } = require('sequelize');
 const Category = require('../models/Category');
 const { protect, authorize } = require('../middleware/auth');
 const { 
@@ -88,8 +89,12 @@ router.post('/',
     try {
       const { name, description, icon, image, roomTypes, defaultAmenities } = req.body;
 
-      // Check if category already exists
-      const existingCategory = await Category.findOne({ name: { $regex: new RegExp(`^${name}$`, 'i') } });
+      // Check if category already exists (case-insensitive)
+      const existingCategory = await Category.findOne({ 
+        where: { 
+          name: { [Op.iLike]: name } 
+        } 
+      });
       if (existingCategory) {
         return res.status(400).json({
           success: false,
@@ -142,8 +147,7 @@ router.put('/:id',
   handleValidationErrors,
   async (req, res) => {
     try {
-      const category = await Category.findById(req.params.id);
-
+      const category = await Category.findByPk(req.params.id);
       if (!category) {
         return res.status(404).json({
           success: false,
@@ -151,11 +155,13 @@ router.put('/:id',
         });
       }
 
-      // Check if name is being changed and if it conflicts
+      // Check if name is being changed and if it conflicts (case-insensitive)
       if (req.body.name && req.body.name !== category.name) {
         const existingCategory = await Category.findOne({ 
-          name: { $regex: new RegExp(`^${req.body.name}$`, 'i') },
-          _id: { $ne: req.params.id }
+          where: {
+            name: { [Op.iLike]: req.body.name },
+            id: { [Op.ne]: req.params.id }
+          }
         });
         if (existingCategory) {
           return res.status(400).json({
@@ -165,11 +171,8 @@ router.put('/:id',
         }
       }
 
-      const updatedCategory = await Category.findByIdAndUpdate(
-        req.params.id,
-        req.body,
-        { new: true, runValidators: true }
-      );
+      await category.update(req.body);
+      const updatedCategory = await Category.findByPk(req.params.id);
 
       res.json({
         success: true,
@@ -191,8 +194,7 @@ router.put('/:id',
 // @access  Private (Admin)
 router.delete('/:id', protect, authorize('admin'), validateObjectId('id'), handleValidationErrors, async (req, res) => {
   try {
-    const category = await Category.findById(req.params.id);
-
+    const category = await Category.findByPk(req.params.id);
     if (!category) {
       return res.status(404).json({
         success: false,
@@ -202,7 +204,9 @@ router.delete('/:id', protect, authorize('admin'), validateObjectId('id'), handl
 
     // Check if category is being used by any rooms
     const Room = require('../models/Room');
-    const roomsUsingCategory = await Room.countDocuments({ category: category.name });
+    const roomsUsingCategory = await Room.count({ 
+      where: { category: category.name } 
+    });
     
     if (roomsUsingCategory > 0) {
       return res.status(400).json({
@@ -211,7 +215,7 @@ router.delete('/:id', protect, authorize('admin'), validateObjectId('id'), handl
       });
     }
 
-    await Category.findByIdAndDelete(req.params.id);
+    await category.destroy();
 
     res.json({
       success: true,
