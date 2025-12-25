@@ -21,6 +21,7 @@ const Header = () => {
 
   const navLinks = [
     { name: 'Home', path: '/' },
+    ...(user ? [{ name: 'My Profile', path: '/profile' }] : []),
     ...(user?.role === 'admin' ? [{ name: 'Admin Panel', path: '/admin' }] : []),
     ...(user?.role === 'owner' ? [{ name: 'My Dashboard', path: '/owner/dashboard' }] : []),
   ];
@@ -87,6 +88,14 @@ const Header = () => {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
+                {user && (
+                  <DropdownMenuItem asChild>
+                    <Link to="/profile" className="flex items-center">
+                      <UserCircle className="mr-2 h-4 w-4" />
+                      My Profile
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                   <DropdownMenuItem onClick={logout}>
                     <LogOut className="mr-2 h-4 w-4" />
                     <span>Logout</span>
@@ -145,7 +154,12 @@ const Header = () => {
             ))}
             <DropdownMenuSeparator className="my-2" />
             {user ? (
-              <Button variant="ghost" onClick={() => { logout(); setIsMenuOpen(false); }} className="text-gray-600 hover:text-purple-600">Logout</Button>
+              <>
+                <Button variant="ghost" asChild className="text-gray-600 hover:text-purple-600">
+                  <Link to="/profile" onClick={() => setIsMenuOpen(false)}>My Profile</Link>
+                </Button>
+                <Button variant="ghost" onClick={() => { logout(); setIsMenuOpen(false); }} className="text-gray-600 hover:text-purple-600">Logout</Button>
+              </>
                 ) : (
                   <>
                     <Button variant="ghost" asChild className="text-gray-600 hover:text-purple-600"><Link to="/login" onClick={() => setIsMenuOpen(false)}>Login</Link></Button>

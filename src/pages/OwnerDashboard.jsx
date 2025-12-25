@@ -29,6 +29,8 @@ import { motion } from 'framer-motion';
 import PropertyListingWizard from '@/components/PropertyListingWizard';
 import EditRoomModal from '@/components/EditRoomModal';
 import roomService from '@/services/roomService';
+import propertyService from '@/services/propertyService';
+import categoryService from '@/services/categoryService';
 import bookingService from '@/services/bookingService';
 import apiService from '@/services/api';
 
@@ -85,22 +87,79 @@ const OwnerDashboard = () => {
   };
 
   // Property CRUD operations
-  const handleAddProperty = async (propertyData) => {
+  const handleAddProperty = async (wizardData) => {
     try {
-      const response = await roomService.createRoom(propertyData);
+      // Get categories to map category name to ID
+      const categoriesResponse = await categoryService.getCategories();
+      const categories = categoriesResponse.data || [];
+      
+      // Map category name to ID
+      const categoryMap = {
+        'Hotel Room': categories.find(c => c.name === 'Hotel Room')?.id,
+        'PG': categories.find(c => c.name === 'PG')?.id,
+        'Home Stay': categories.find(c => c.name === 'Home Stay')?.id,
+        'Independent Home': categories.find(c => c.name === 'Independent Home')?.id
+      };
+
+      // Map category to property type
+      const typeMap = {
+        'Hotel Room': 'hotel',
+        'PG': 'pg',
+        'Home Stay': 'homestay',
+        'Independent Home': 'apartment'
+      };
+
+      const categoryId = categoryMap[wizardData.category];
+      if (!categoryId) {
+        throw new Error(`Category "${wizardData.category}" not found. Please contact support.`);
+      }
+
+      // Transform wizard data to property + room structure
+      const propertyData = {
+        name: wizardData.title,
+        description: wizardData.description,
+        type: typeMap[wizardData.category],
+        categoryId: categoryId,
+        location: wizardData.location,
+        amenities: wizardData.amenities || [],
+        images: wizardData.images || [],
+        rules: wizardData.rules || [],
+        totalFloors: 1,
+        // Create a room automatically with the property
+        createRoom: true,
+        roomData: {
+          title: wizardData.title,
+          description: wizardData.description,
+          price: wizardData.price,
+          maxGuests: wizardData.maxGuests,
+          category: wizardData.category,
+          roomType: wizardData.roomType,
+          pricingType: wizardData.pricingType,
+          amenities: wizardData.amenities || [],
+          rules: wizardData.rules || [],
+          images: wizardData.images || [],
+          // Category-specific fields
+          pgOptions: wizardData.pgOptions || null,
+          hotelRoomTypes: wizardData.hotelRoomTypes || [],
+          hotelPrices: wizardData.hotelPrices || null,
+          propertyDetails: wizardData.propertyDetails || null
+        }
+      };
+
+      const response = await propertyService.createProperty(propertyData);
       if (response.success) {
-        setProperties([response.data, ...properties]);
         setIsAddModalOpen(false);
         toast({ 
-          title: "Property Added! 🎉", 
-          description: "Your property has been listed successfully." 
+          title: "Property Submitted! 🎉", 
+          description: "Your property is pending approval and will be visible once approved by our team." 
         });
         loadOwnerData(); // Reload to get updated stats
       }
     } catch (error) {
+      console.error('Add property error:', error);
       toast({
-        title: "Add Failed",
-        description: error.message || "Failed to add property.",
+        title: "Submission Failed",
+        description: error.response?.data?.message || error.message || "Failed to submit property. Please try again.",
         variant: "destructive"
       });
     }

@@ -8,6 +8,7 @@ import PropertyDetailPage from '@/pages/PropertyDetailPage';
 import SearchResultsPage from '@/pages/SearchResultsPage';
 import AdminPage from '@/pages/AdminPage';
 import OwnerDashboard from '@/pages/OwnerDashboard';
+import ProfilePage from '@/pages/ProfilePage';
 import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import NotFoundPage from '@/pages/NotFoundPage';
@@ -42,6 +43,14 @@ function App() {
                   <OwnerDashboard />
                 </ProtectedRoute>
               } 
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <ProfilePage />
+                </ProtectedRoute>
+              }
             />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>

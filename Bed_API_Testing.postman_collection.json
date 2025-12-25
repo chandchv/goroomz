@@ -1,0 +1,163 @@
+{
+  "info": {
+    "name": "Bed API Testing - GoRoomz",
+    "description": "Test collection for bed endpoint fixes",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "room309Id",
+      "value": "610ba499-1376-4473-a476-e885d139c74d",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "health"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "2. Login - Get Auth Token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    const response = pm.response.json();",
+              "    if (response.success && response.token) {",
+              "        pm.collectionVariables.set('authToken', response.token);",
+              "        console.log('Auth token saved:', response.token.substring(0, 20) + '...');",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"amit.patel@example.com\",\n  \"password\": \"Owner123!\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/internal/auth/login",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "internal", "auth", "login"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "3. Get All Rooms (Find Room IDs)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/internal/rooms/status",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "internal", "rooms", "status"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "4. Get Beds for Room 309 (Main Test)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/internal/rooms/{{room309Id}}/beds",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "internal", "rooms", "{{room309Id}}", "beds"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "5. Test Without Auth (Should Fail)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/internal/rooms/{{room309Id}}/beds",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "internal", "rooms", "{{room309Id}}", "beds"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "6. Test Invalid Room ID (Should Fail)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/internal/rooms/invalid-room-id/beds",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "internal", "rooms", "invalid-room-id", "beds"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "7. Test Old Route (Should 404)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/internal/beds/rooms/{{room309Id}}/beds",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "internal", "beds", "rooms", "{{room309Id}}", "beds"]
+        }
+      },
+      "response": []
+    }
+  ]
+}

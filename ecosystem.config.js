@@ -22,6 +22,40 @@ module.exports = {
       kill_timeout: 5000,
       wait_ready: true,
       listen_timeout: 10000
+    },
+    {
+      name: 'goroomz-alert-scheduler',
+      script: './backend/jobs/alertScheduler.js',
+      cwd: '/var/www/goroomz',
+      instances: 1,
+      exec_mode: 'fork',
+      env: {
+        NODE_ENV: 'production'
+      },
+      error_file: './logs/alert-scheduler-error.log',
+      out_file: './logs/alert-scheduler-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      autorestart: true,
+      max_memory_restart: '200M',
+      cron_restart: '0 */6 * * *', // Restart every 6 hours
+      watch: false
+    },
+    {
+      name: 'goroomz-reminder-scheduler',
+      script: './backend/jobs/reminderScheduler.js',
+      cwd: '/var/www/goroomz',
+      instances: 1,
+      exec_mode: 'fork',
+      env: {
+        NODE_ENV: 'production'
+      },
+      error_file: './logs/reminder-scheduler-error.log',
+      out_file: './logs/reminder-scheduler-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      autorestart: true,
+      max_memory_restart: '200M',
+      cron_restart: '0 */12 * * *', // Restart every 12 hours
+      watch: false
     }
   ]
 };

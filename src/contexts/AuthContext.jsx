@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useEffect, useCallback } from 'react';
 import { toast } from '@/components/ui/use-toast';
 import { auth } from '@/firebase';
 import { 
@@ -11,6 +11,7 @@ import {
   signInWithPhoneNumber,
   updateEmail,
   updatePassword,
+  updateProfile,
 } from 'firebase/auth';
 import apiService from '@/services/api';
 
@@ -125,15 +126,58 @@ export const AuthProvider = ({ children }) => {
 
   const signup = async (name, email, password) => {
     try {
+      // Create Firebase user
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      // Here you would typically call your backend to create a user profile with the name
-      // For now, we'll just show a success message
-      toast({ title: `Welcome! 🎉 Your account is ready.` });
-      return userCredential.user;
+      const firebaseUser = userCredential.user;
+
+      // Update Firebase user's display name
+      if (name) {
+        await updateProfile(firebaseUser, { displayName: name });
+        // Force token refresh to include the updated displayName
+        await firebaseUser.getIdToken(true);
+      }
+
+      // Get the ID token and sync with backend
+      // The backend will fetch the displayName from Firebase Admin
+      const token = await firebaseUser.getIdToken();
+      const response = await apiService.post('/users/firebase-signin', { token });
+
+      if (response?.success) {
+        const { user: backendUser, token: backendToken } = response;
+        setUser(backendUser);
+        apiService.setToken(backendToken);
+        setAuthProvider('firebase');
+        toast({ title: `Welcome, ${backendUser.name || name}! 🎉 Your account is ready.` });
+        return backendUser;
+      } else {
+        throw new Error(response?.message || 'Backend signup failed');
+      }
     } catch (error) {
+      console.error('Signup error:', error);
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
+      
+      // Provide more specific error messages
+      let errorMessage = "An error occurred during signup.";
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = "An account with this email already exists.";
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "The email address is invalid.";
+      } else if (error.code === 'auth/operation-not-allowed') {
+        errorMessage = "Email/password authentication is not enabled in Firebase Console. Please enable it in Authentication → Sign-in method.";
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = "The password is too weak. Please use a stronger password (at least 6 characters).";
+      } else if (error.code === 'auth/invalid-api-key') {
+        errorMessage = "Firebase configuration error. Please check your API key.";
+      } else if (error.code === 'auth/network-request-failed') {
+        errorMessage = "Network error. Please check your internet connection and try again.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
       toast({
         title: "Signup Failed",
-        description: error.message || "An account with this email already exists.",
+        description: errorMessage,
         variant: "destructive"
       });
       return null;
@@ -247,6 +291,31 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const updateProfile = async (profileData) => {
+    try {
+      const response = await apiService.updateProfile(profileData);
+
+      if (response.success && response.user) {
+        setUser(response.user);
+        toast({
+          title: "Profile Updated",
+          description: "Your profile details have been saved successfully.",
+        });
+        return response.user;
+      }
+
+      throw new Error(response.message || 'Profile update failed');
+    } catch (error) {
+      console.error('Profile update error:', error);
+      toast({
+        title: "Profile Update Failed",
+        description: error.message || "We couldn't update your profile. Please try again.",
+        variant: "destructive"
+      });
+      throw error;
+    }
+  };
+
   const updateUserProfile = async (firebaseUser, { name, email, password, location }) => {
     try {
       // Only update email in Firebase if the user already has an email provider
@@ -276,8 +345,22 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const response = await apiService.getCurrentUser();
+      if (response.success && response.user) {
+        setUser(response.user);
+        return response.user;
+      }
+      throw new Error(response.message || 'Failed to refresh user data');
+    } catch (error) {
+      console.error('Error refreshing user:', error);
+      throw error;
+    }
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, signInWithGoogle, setupRecaptcha, sendOtp, verifyOtp, updateUserProfile }}>
+    <AuthContext.Provider value={{ user, login, signup, logout, signInWithGoogle, setupRecaptcha, sendOtp, verifyOtp, updateProfile, updateUserProfile, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );
