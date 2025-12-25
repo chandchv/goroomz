@@ -21,7 +21,7 @@ exports.validateUserRegistration = [
     .withMessage('Name must be between 2 and 50 characters'),
   body('email')
     .isEmail()
-    .normalizeEmail()
+    .normalizeEmail({ gmail_remove_dots: false })
     .withMessage('Please provide a valid email'),
   body('password')
     .isLength({ min: 6 })
@@ -35,7 +35,7 @@ exports.validateUserRegistration = [
 exports.validateUserLogin = [
   body('email')
     .isEmail()
-    .normalizeEmail()
+    .normalizeEmail({ gmail_remove_dots: false })
     .withMessage('Please provide a valid email'),
   body('password')
     .notEmpty()
@@ -113,7 +113,7 @@ exports.validateBooking = [
     .withMessage('Valid 10-digit phone number is required'),
   body('contactInfo.email')
     .isEmail()
-    .normalizeEmail()
+    .normalizeEmail({ gmail_remove_dots: false })
     .withMessage('Valid email is required')
 ];
 

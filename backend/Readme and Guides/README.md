@@ -64,12 +64,24 @@ A comprehensive backend API for the GoRoomz room booking platform built with Nod
    npm run setup
    ```
 
-6. **Seed the database**
+6. **Create a superuser (admin account)**
+   ```bash
+   npm run createsuperuser
+   ```
+   
+   Or for quick setup:
+   ```bash
+   npm run createsuperuser:quick admin@goroomz.com Admin123! "Admin User"
+   ```
+   
+   See [SUPERUSER_SETUP.md](./SUPERUSER_SETUP.md) for detailed instructions.
+
+7. **Seed the database (optional)**
    ```bash
    npm run seed
    ```
 
-7. **Start the development server**
+8. **Start the development server**
    ```bash
    npm run dev
    ```

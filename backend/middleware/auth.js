@@ -1,3 +1,4 @@
+const jwt = require('jsonwebtoken');
 const admin = require('../config/firebaseAdmin');
 const { User } = require('../models');
 
@@ -18,6 +19,28 @@ exports.protect = async (req, res, next) => {
       });
     }
 
+    // First attempt to verify as local JWT
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const user = await User.findByPk(decoded.id);
+
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          message: 'User not found or no longer exists.'
+        });
+      }
+
+      req.user = user;
+      return next();
+    } catch (jwtError) {
+      // If JWT verification failed for reasons other than token format, log for debugging
+      if (jwtError.name !== 'JsonWebTokenError' && jwtError.name !== 'TokenExpiredError') {
+        console.warn('JWT verification error:', jwtError.message);
+      }
+      // Fall through to Firebase verification
+    }
+
     try {
       // Verify Firebase ID token
       const decodedToken = await admin.auth().verifyIdToken(token);
@@ -27,7 +50,6 @@ exports.protect = async (req, res, next) => {
       let user = await User.findOne({ where: { firebase_uid: uid } });
 
       if (!user) {
-        // If user doesn't exist, create a new one
         user = await User.create({
           firebase_uid: uid,
           email: email,
@@ -38,9 +60,9 @@ exports.protect = async (req, res, next) => {
       }
 
       req.user = user;
-      next();
-    } catch (error) {
-      console.error('Firebase token verification error:', error);
+      return next();
+    } catch (firebaseError) {
+      console.error('Token verification error:', firebaseError.message);
       return res.status(401).json({
         success: false,
         message: 'Token is not valid.'

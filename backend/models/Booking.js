@@ -5,11 +5,13 @@ const Booking = sequelize.define('Booking', {
   id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
-    primaryKey: true
+    primaryKey: true,
+    allowNull: false
   },
   roomId: {
     type: DataTypes.UUID,
     allowNull: false,
+    field: 'room_id_old', // Use room_id_old column until migration is fixed
     references: {
       model: 'rooms',
       key: 'id'
@@ -41,12 +43,11 @@ const Booking = sequelize.define('Booking', {
   },
   checkOut: {
     type: DataTypes.DATE,
-    allowNull: false,
+    allowNull: true, // Allow null for PG bookings where check-out is optional
     validate: {
       isDate: true,
-      notNull: true,
       isAfterCheckIn(value) {
-        if (this.checkIn && value <= this.checkIn) {
+        if (this.checkIn && value && value <= this.checkIn) {
           throw new Error('Check-out date must be after check-in date');
         }
       }
@@ -119,18 +120,62 @@ const Booking = sequelize.define('Booking', {
   cancelledBy: {
     type: DataTypes.ENUM('user', 'owner', 'admin'),
     allowNull: true
+  },
+  // Internal Management System fields
+  bookingSource: {
+    type: DataTypes.ENUM('online', 'offline'),
+    allowNull: true,
+    defaultValue: 'online'
+  },
+  bedId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'bed_assignments',
+      key: 'id'
+    }
+  },
+  actualCheckInTime: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  actualCheckOutTime: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  securityDepositId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'security_deposits',
+      key: 'id'
+    }
+  },
+  checkedInBy: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'users',
+      key: 'id'
+    }
+  },
+  checkedOutBy: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'users',
+      key: 'id'
+    }
   }
 }, {
   tableName: 'bookings',
+  underscored: true,
   indexes: [
     {
       fields: ['user_id', 'created_at']
     },
     {
       fields: ['room_id', 'check_in', 'check_out']
-    },
-    {
-      fields: ['status', 'created_at']
     },
     {
       fields: ['owner_id']

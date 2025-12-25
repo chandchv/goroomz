@@ -262,13 +262,24 @@ router.post('/category-owner-signup', async (req, res) => {
   try {
     const { name, email, password, phone } = req.body;
 
-    // Check if user already exists
+    // Check if user already exists with this email
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
       return res.status(400).json({
         success: false,
         message: 'User already exists with this email'
       });
+    }
+
+    // Check if user already exists with this phone number
+    if (phone) {
+      const existingPhoneUser = await User.findOne({ where: { phone: phone.trim() } });
+      if (existingPhoneUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'User already exists with this phone number'
+        });
+      }
     }
 
     // Create category owner user

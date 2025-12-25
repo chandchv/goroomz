@@ -5,7 +5,8 @@ const RoomType = sequelize.define('RoomType', {
   id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
-    primaryKey: true
+    primaryKey: true,
+    allowNull: false
   },
   propertyId: {
     type: DataTypes.UUID,
@@ -31,8 +32,7 @@ const RoomType = sequelize.define('RoomType', {
   bedConfiguration: {
     type: DataTypes.JSONB,
     allowNull: false,
-    defaultValue: {},
-    comment: 'e.g., { "single": 1, "bunk": 2, "double": 0 }'
+    defaultValue: {}
   },
   maxOccupancy: {
     type: DataTypes.INTEGER,
@@ -52,7 +52,6 @@ const RoomType = sequelize.define('RoomType', {
   pricePerBed: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: true,
-    comment: 'For dormitory-style rooms where guests book individual beds',
     validate: {
       min: 0
     }
@@ -76,7 +75,6 @@ const RoomType = sequelize.define('RoomType', {
   totalBeds: {
     type: DataTypes.INTEGER,
     allowNull: true,
-    comment: 'Total number of beds in this room type (for dormitories)',
     validate: {
       min: 0
     }
@@ -84,15 +82,13 @@ const RoomType = sequelize.define('RoomType', {
   availableBeds: {
     type: DataTypes.INTEGER,
     allowNull: true,
-    comment: 'Available beds (for dormitories)',
     validate: {
       min: 0
     }
   },
   roomSize: {
     type: DataTypes.INTEGER,
-    allowNull: true,
-    comment: 'Room size in square feet'
+    allowNull: true
   },
   amenities: {
     type: DataTypes.ARRAY(DataTypes.STRING),
@@ -108,13 +104,11 @@ const RoomType = sequelize.define('RoomType', {
   },
   isDormitory: {
     type: DataTypes.BOOLEAN,
-    defaultValue: false,
-    comment: 'True if this is a shared dormitory room'
+    defaultValue: false
   },
   gender: {
     type: DataTypes.ENUM('mixed', 'male', 'female'),
-    allowNull: true,
-    comment: 'For dormitory rooms - gender restriction'
+    allowNull: true
   },
   smokingAllowed: {
     type: DataTypes.BOOLEAN,
@@ -142,8 +136,7 @@ const RoomType = sequelize.define('RoomType', {
   },
   viewType: {
     type: DataTypes.STRING,
-    allowNull: true,
-    comment: 'e.g., "Garden View", "City View", "Sea View"'
+    allowNull: true
   },
   cancellationPolicy: {
     type: DataTypes.TEXT,
@@ -151,13 +144,23 @@ const RoomType = sequelize.define('RoomType', {
   },
   specialOffers: {
     type: DataTypes.JSONB,
-    defaultValue: {},
-    comment: 'Special offers and discounts'
+    defaultValue: {}
   }
 }, {
   tableName: 'room_types',
   underscored: true,
-  timestamps: true
+  timestamps: true,
+  indexes: [
+    {
+      fields: ['property_id']
+    },
+    {
+      fields: ['is_active']
+    },
+    {
+      fields: ['is_dormitory']
+    }
+  ]
 });
 
 module.exports = RoomType;

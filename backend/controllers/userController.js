@@ -11,6 +11,25 @@ exports.firebaseSignIn = async (req, res) => {
     const { uid, email, phone_number, name, picture } = decodedToken;
     const normalizedEmail = email ? email.toLowerCase() : null;
 
+    // Fetch user record from Firebase to get displayName if not in token
+    let firebaseUserRecord = null;
+    let displayName = name;
+    let photoURL = picture;
+    
+    try {
+      firebaseUserRecord = await admin.auth().getUser(uid);
+      // displayName from Firebase user record takes precedence
+      if (firebaseUserRecord.displayName) {
+        displayName = firebaseUserRecord.displayName;
+      }
+      if (firebaseUserRecord.photoURL) {
+        photoURL = firebaseUserRecord.photoURL;
+      }
+    } catch (firebaseError) {
+      console.warn('Could not fetch Firebase user record:', firebaseError.message);
+      // Continue with token data if we can't fetch the user record
+    }
+
     let user;
     // Prioritize finding user by email if it exists
     if (normalizedEmail) {
@@ -24,13 +43,15 @@ exports.firebaseSignIn = async (req, res) => {
 
     if (!user) {
       // User does not exist, create a new one
+      // Use displayName if available, otherwise fall back to a default
+      const userName = displayName || normalizedEmail?.split('@')[0] || 'User';
       try {
         user = await User.create({
           firebase_uid: uid,
           email: normalizedEmail,
           phone: phone_number,
-          name,
-          avatar: picture,
+          name: userName,
+          avatar: photoURL,
           isVerified: true, // All Firebase sign-ins are considered verified
         });
       } catch (createError) {
@@ -56,6 +77,18 @@ exports.firebaseSignIn = async (req, res) => {
     // Ensure email is normalized (for legacy records)
     if (normalizedEmail && user.email !== normalizedEmail) {
       user.email = normalizedEmail;
+      updated = true;
+    }
+
+    // Update name from Firebase if it's different and we have a displayName
+    if (displayName && user.name !== displayName) {
+      user.name = displayName;
+      updated = true;
+    }
+
+    // Update avatar if we have a photoURL
+    if (photoURL && user.avatar !== photoURL) {
+      user.avatar = photoURL;
       updated = true;
     }
 

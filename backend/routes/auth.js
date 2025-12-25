@@ -7,6 +7,7 @@ const {
   validateUserLogin, 
   handleValidationErrors 
 } = require('../middleware/validation');
+const { validateUserCreation } = require('../utils/userValidation');
 
 const router = express.Router();
 
@@ -25,12 +26,13 @@ router.post('/register', validateUserRegistration, handleValidationErrors, async
     const { name, email, password, phone } = req.body;
     const normalizedEmail = email.toLowerCase();
 
-    // Check if user already exists
-    const existingUser = await User.findOne({ where: { email: normalizedEmail } });
-    if (existingUser) {
+    // Validate user data including uniqueness checks
+    const validation = await validateUserCreation({ name, email: normalizedEmail, phone });
+    if (!validation.isValid) {
       return res.status(400).json({
         success: false,
-        message: 'User already exists with this email'
+        message: 'Validation failed',
+        errors: validation.errors
       });
     }
 
@@ -130,6 +132,14 @@ router.get('/me', protect, async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
+        dob: user.dob,
+        location: user.location,
+        country: user.country,
+        state: user.state,
+        city: user.city,
+        landmark: user.landmark,
+        address: user.address,
+        pincode: user.pincode,
         role: user.role,
         avatar: user.avatar,
         preferences: user.preferences
@@ -149,7 +159,7 @@ router.get('/me', protect, async (req, res) => {
 // @access  Private
 router.put('/profile', protect, async (req, res) => {
   try {
-    const { name, phone, preferences } = req.body;
+    const { name, phone, dob, location, country, state, city, landmark, address, pincode, preferences } = req.body;
     
     const user = await User.findByPk(req.user.id);
     if (!user) {
@@ -159,7 +169,58 @@ router.put('/profile', protect, async (req, res) => {
       });
     }
 
-    await user.update({ name, phone, preferences });
+    if (dob) {
+      const parsedDate = new Date(dob);
+      if (Number.isNaN(parsedDate.valueOf())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date of birth format. Use YYYY-MM-DD.'
+        });
+      }
+    }
+
+    if (pincode && !/^[0-9A-Za-z]{4,10}$/.test(pincode)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid pincode. Use 4-10 alphanumeric characters.'
+      });
+    }
+
+    const updateData = {};
+    if (name !== undefined) {
+      const trimmedName = name.trim();
+      if (trimmedName.length < 2) {
+        return res.status(400).json({
+          success: false,
+          message: 'Name must be at least 2 characters long.'
+        });
+      }
+      updateData.name = trimmedName;
+    }
+    if (phone !== undefined) {
+      const trimmedPhone = phone?.trim() || '';
+      if (trimmedPhone && !/^\+?[0-9]{10,15}$/.test(trimmedPhone)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Phone number must be 10-15 digits and may start with +.'
+        });
+      }
+      updateData.phone = trimmedPhone || null;
+    }
+    if (preferences !== undefined) updateData.preferences = preferences;
+    if (dob !== undefined) updateData.dob = dob || null;
+    if (location !== undefined) updateData.location = location || null;
+    if (country !== undefined) updateData.country = country || null;
+    if (state !== undefined) updateData.state = state || null;
+    if (city !== undefined) updateData.city = city || null;
+    if (landmark !== undefined) updateData.landmark = landmark || null;
+    if (address !== undefined) updateData.address = address || null;
+    if (pincode !== undefined) updateData.pincode = pincode || null;
+
+    await user.update(updateData);
+    
+    // Reload user to get updated data
+    await user.reload();
 
     res.json({
       success: true,
@@ -169,6 +230,14 @@ router.put('/profile', protect, async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone,
+        dob: user.dob,
+        location: user.location,
+        country: user.country,
+        state: user.state,
+        city: user.city,
+        landmark: user.landmark,
+        address: user.address,
+        pincode: user.pincode,
         role: user.role,
         avatar: user.avatar,
         preferences: user.preferences

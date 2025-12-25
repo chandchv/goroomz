@@ -5,7 +5,8 @@ const Category = sequelize.define('Category', {
   id: {
     type: DataTypes.UUID,
     defaultValue: DataTypes.UUIDV4,
-    primaryKey: true
+    primaryKey: true,
+    allowNull: false
   },
   name: {
     type: DataTypes.STRING,
@@ -71,6 +72,7 @@ const Category = sequelize.define('Category', {
   }
 }, {
   tableName: 'categories',
+  underscored: true,
   indexes: [
     {
       fields: ['sort_order', 'name']
