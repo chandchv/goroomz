@@ -1,0 +1,74 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+website/dist/
+internal-management/build/
+internal-management/.react-router/
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.production.local
+backend/.env
+website/.env
+internal-management/.env
+
+# Keep .env.example and .env.production templates
+!backend/.env.production
+!website/.env.production
+!internal-management/.env.production
+
+# Database dumps and backups
+backend/backups/
+*.sql
+db-export*.sql
+rooms-only*.sql
+
+# Deployment scripts and archives
+*.tar.gz
+deploy-to-aws.sh
+setup-ssl.sh
+setup-server.sh
+fix-*.sh
+init-db.sh
+create-*.sh
+check-*.sh
+sync-*.sh
+test-*.sh
+import-*.sh
+force-*.sh
+clean-*.sh
+
+# CSV data files
+*.csv
+
+# Uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Logs
+*.log
+nohup.out
+backend/nohup.out
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+*.bak
+*.tmp
+
+# Large generated files
+backend/test-results.txt
+backend/test-output.txt
+backend/scraped_properties_import.json
+backend/pg_data_export_*.json
+backend/pg_data_export_*.csv
