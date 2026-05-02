@@ -129,6 +129,7 @@ const CategoryPage = () => {
   }, [categoryName, currentPage]);
 
   const isInitialMount = React.useRef(true);
+  const lastFiltersRef = React.useRef('');
 
   // Handle filter changes
   const handleFiltersChange = async (newFilters) => {
@@ -137,6 +138,13 @@ const CategoryPage = () => {
       isInitialMount.current = false;
       return;
     }
+
+    // Skip if filters haven't actually changed
+    const filterKey = JSON.stringify(newFilters);
+    if (filterKey === lastFiltersRef.current) {
+      return;
+    }
+    lastFiltersRef.current = filterKey;
 
     setIsFiltering(true);
     setFilters(newFilters);
