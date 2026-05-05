@@ -72,6 +72,76 @@ router.get('/internal/audit', async (req, res) => {
   }
 });
 
+// @desc    Get audit logs for a specific user
+// @route   GET /api/internal/audit/user/:userId
+// @access  Private
+router.get('/internal/audit/user/:userId', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+    const token = authHeader.substring(7);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findByPk(decoded.id);
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Invalid token' });
+    }
+
+    const { limit = 10, page = 1 } = req.query;
+
+    // Audit logging not yet implemented - return empty data
+    res.json({
+      success: true,
+      data: {
+        logs: [],
+        total: 0,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: 0
+      }
+    });
+  } catch (error) {
+    console.error('Error in user audit logs:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// @desc    Get audit logs for a specific resource
+// @route   GET /api/internal/audit/resource/:resourceType/:resourceId
+// @access  Private
+router.get('/internal/audit/resource/:resourceType/:resourceId', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+    const token = authHeader.substring(7);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findByPk(decoded.id);
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Invalid token' });
+    }
+
+    const { limit = 20, page = 1 } = req.query;
+
+    // Audit logging not yet implemented - return empty data
+    res.json({
+      success: true,
+      data: {
+        logs: [],
+        total: 0,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: 0
+      }
+    });
+  } catch (error) {
+    console.error('Error in resource audit logs:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
 // Analytics Endpoints for Platform Management
 
 // @desc    Get platform analytics

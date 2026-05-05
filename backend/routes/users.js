@@ -255,7 +255,7 @@ router.get('/stats/overview', protect, authorize('admin'), async (req, res) => {
   }
 });
 
-// @desc    Category owner signup
+// @desc    Category owner signup (legacy — kept for backward compat)
 // @route   POST /api/users/category-owner-signup
 // @access  Public
 router.post('/category-owner-signup', async (req, res) => {
@@ -271,19 +271,19 @@ router.post('/category-owner-signup', async (req, res) => {
       });
     }
 
-    // Create category owner user
+    // Create as property owner (not category_owner)
     const user = await User.create({
       name,
       email,
       password,
       phone,
-      role: 'category_owner',
-      isVerified: false // Can be auto-verified later if needed
+      role: 'owner',
+      isVerified: false
     });
 
     res.status(201).json({
       success: true,
-      message: 'Category owner account created successfully',
+      message: 'Property owner account created successfully',
       data: {
         id: user.id,
         name: user.name,
@@ -292,11 +292,68 @@ router.post('/category-owner-signup', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Category owner signup error:', error);
+    console.error('Owner signup error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error creating category owner account'
+      message: 'Error creating owner account'
     });
+  }
+});
+
+// @desc    Property owner signup
+// @route   POST /api/users/owner-signup
+// @access  Public
+router.post('/owner-signup', async (req, res) => {
+  try {
+    const { name, email, password, phone } = req.body;
+
+    if (!name || !email || !password || !phone) {
+      return res.status(400).json({ success: false, message: 'All fields are required' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+    }
+    if (!/^[0-9]{10,15}$/.test(phone)) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid phone number (10-15 digits)' });
+    }
+
+    const existingUser = await User.findOne({ where: { email } });
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'User already exists with this email' });
+    }
+
+    const user = await User.create({
+      name,
+      email,
+      password,
+      phone,
+      role: 'owner',
+      isVerified: false
+    });
+
+    // Generate token so user is logged in immediately
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role },
+      process.env.JWT_SECRET || 'goroomz-secret-key',
+      { expiresIn: process.env.JWT_EXPIRE || '7d' }
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Property owner account created successfully. You can now list your property.',
+      token,
+      data: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone
+      }
+    });
+  } catch (error) {
+    console.error('Owner signup error:', error);
+    res.status(500).json({ success: false, message: 'Error creating owner account' });
   }
 });
 

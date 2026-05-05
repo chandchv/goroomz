@@ -13,8 +13,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
+import { getImageUrl } from '@/utils/imageUtils';
 import propertyService from '@/services/propertyService';
 import BookingModal from '@/components/BookingModal';
+import ShareButton from '@/components/ShareButton';
+import SimilarProperties from '@/components/SimilarProperties';
 import bookingService from '@/services/bookingService';
 
 // Amenity icon mapping
@@ -61,10 +64,11 @@ const PGDetailPage = () => {
   const [showAllPhotos, setShowAllPhotos] = useState(false);
   const [showClaimModal, setShowClaimModal] = useState(false);
   const [claimForm, setClaimForm] = useState({ name: '', email: '', phone: '', businessName: '', proofOfOwnership: '' });
+  const [claimFiles, setClaimFiles] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [selectedSharingType, setSelectedSharingType] = useState(null);
-  const [enquiryForm, setEnquiryForm] = useState({ name: '', phone: '', email: '' });
+  const [enquiryForm, setEnquiryForm] = useState({ name: '', phone: '', email: '', message: '', preferredDate: '' });
 
   useEffect(() => { loadProperty(); }, [identifier]);
 
@@ -84,10 +88,11 @@ const PGDetailPage = () => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const response = await propertyService.claimProperty(identifier, claimForm);
+      const response = await propertyService.claimProperty(identifier, claimForm, claimFiles);
       if (response.success) {
         toast({ title: "Claim Submitted! ✅", description: response.message });
         setShowClaimModal(false);
+        setClaimFiles([]);
       }
     } catch (error) {
       toast({ title: "Error", description: error.message || "Failed to submit claim", variant: "destructive" });
@@ -119,9 +124,24 @@ const PGDetailPage = () => {
     }
   };
 
-  const handleEnquiry = (e) => {
+  const handleEnquiry = async (e) => {
     e.preventDefault();
-    handleBookNow(null);
+    try {
+      const response = await propertyService.submitEnquiry({
+        propertyId: property.id,
+        name: enquiryForm.name,
+        phone: enquiryForm.phone,
+        email: enquiryForm.email,
+        message: enquiryForm.message || `Interested in ${property.name}`,
+        preferredDate: enquiryForm.preferredDate || null,
+      });
+      if (response.success) {
+        toast({ title: "Enquiry Submitted! ✅", description: "We'll get back to you shortly." });
+        setEnquiryForm({ name: '', phone: '', email: '', message: '', preferredDate: '' });
+      }
+    } catch (error) {
+      toast({ title: "Error", description: error.message || "Failed to submit enquiry", variant: "destructive" });
+    }
   };
 
   if (isLoading) return (
@@ -142,7 +162,7 @@ const PGDetailPage = () => {
   const genderLabel = genderPref === 'female' ? 'Ladies Only' : genderPref === 'male' ? 'Gents Only' : 'Co-ed';
   const isClaimed = property.metadata?.isClaimed;
   const images = property.images || [];
-  const getImgUrl = (img) => typeof img === 'string' ? img : img?.url || '';
+  const getImgUrl = (img) => getImageUrl(img) || '';
 
   return (
     <>
@@ -228,7 +248,11 @@ const PGDetailPage = () => {
                   )}
                 </div>
               </div>
-              <div className="text-right">
+              <div className="text-right flex flex-col items-end gap-2">
+                <ShareButton
+                  title={`${property.name} - PG in ${property.location?.area || 'Bangalore'} | GoRoomz`}
+                  text={`Check out ${property.name} on GoRoomz - starting from ₹${lowestPrice === Infinity ? '' : lowestPrice.toLocaleString()}/month`}
+                />
                 <div className="text-sm text-gray-500">Starting from</div>
                 <div className="text-3xl font-bold text-purple-600">₹{lowestPrice === Infinity ? '—' : lowestPrice.toLocaleString()}</div>
                 <div className="text-sm text-gray-500">/ month *</div>
@@ -374,6 +398,9 @@ const PGDetailPage = () => {
                   </div>
                 </section>
               )}
+
+              {/* Similar Properties */}
+              <SimilarProperties propertyId={property.id} area={property.location?.area} city={property.location?.city} />
             </div>
 
             {/* Right Column — Sticky Sidebar */}
@@ -381,7 +408,7 @@ const PGDetailPage = () => {
               <div className="sticky top-4 space-y-4">
 
                 {/* Enquiry Form */}
-                <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                <div id="enquiry-section" className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                   <h3 className="text-lg font-bold text-gray-900 mb-1">Interested in this property?</h3>
                   <p className="text-sm text-gray-500 mb-4">Fill in your details and we'll get back to you</p>
                   <form onSubmit={handleEnquiry} className="space-y-3">
@@ -394,6 +421,16 @@ const PGDetailPage = () => {
                     <input type="email" placeholder="Email Address"
                       value={enquiryForm.email} onChange={(e) => setEnquiryForm(f => ({ ...f, email: e.target.value }))}
                       className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
+                    <textarea placeholder="Message (optional)" rows={3}
+                      value={enquiryForm.message} onChange={(e) => setEnquiryForm(f => ({ ...f, message: e.target.value }))}
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none" />
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Preferred Visit Date</label>
+                      <input type="date" 
+                        value={enquiryForm.preferredDate} onChange={(e) => setEnquiryForm(f => ({ ...f, preferredDate: e.target.value }))}
+                        min={new Date().toISOString().split('T')[0]}
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent" />
+                    </div>
                     <button type="submit"
                       className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg transition text-sm">
                       <Calendar className="w-4 h-4 inline mr-2" />
@@ -403,15 +440,36 @@ const PGDetailPage = () => {
                 </div>
 
                 {/* Contact Card */}
-                {property.contactInfo?.phone && (
-                  <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+                {(property.contactInfo?.phone || property.contactInfo?.phones?.length > 0) && (
+                  <div id="contact-section" className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                     <h3 className="font-bold text-gray-900 mb-3">Contact</h3>
                     <div className="space-y-3">
-                      <a href={`tel:${property.contactInfo.phone}`}
-                        className="flex items-center gap-3 p-3 bg-green-50 rounded-lg text-green-700 hover:bg-green-100 transition">
-                        <Phone className="w-5 h-5" />
-                        <span className="font-medium">{property.contactInfo.phone}</span>
-                      </a>
+                      {/* Contact person name */}
+                      {property.contactInfo.contactName && (
+                        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg text-gray-700">
+                          <Users className="w-5 h-5 flex-shrink-0" />
+                          <span className="font-medium">{property.contactInfo.contactName}</span>
+                        </div>
+                      )}
+                      {/* Single phone field */}
+                      {property.contactInfo.phone && (
+                        <a href={`tel:${property.contactInfo.phone}`}
+                          className="flex items-center gap-3 p-3 bg-green-50 rounded-lg text-green-700 hover:bg-green-100 transition">
+                          <Phone className="w-5 h-5" />
+                          <span className="font-medium">{property.contactInfo.phone}</span>
+                        </a>
+                      )}
+                      {/* Phones array (scraped data) */}
+                      {property.contactInfo.phones?.length > 0 && !property.contactInfo.phone && (
+                        property.contactInfo.phones.map((ph, idx) => (
+                          <a key={idx} href={`tel:${ph}`}
+                            className="flex items-center gap-3 p-3 bg-green-50 rounded-lg text-green-700 hover:bg-green-100 transition">
+                            <Phone className="w-5 h-5" />
+                            <span className="font-medium">{ph}</span>
+                          </a>
+                        ))
+                      )}
+                      {/* Email */}
                       {property.contactInfo.email && (
                         <a href={`mailto:${property.contactInfo.email}`}
                           className="flex items-center gap-3 p-3 bg-blue-50 rounded-lg text-blue-700 hover:bg-blue-100 transition">
@@ -434,6 +492,41 @@ const PGDetailPage = () => {
             </div>
           </div>
         </div>
+
+        {/* ── Sticky Mobile Bottom Bar ── */}
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-[0_-4px_12px_rgba(0,0,0,0.1)] z-40 px-4 py-3 safe-area-bottom">
+          <div className="flex items-center gap-3">
+            {/* Price display */}
+            <div className="flex-shrink-0">
+              <div className="text-xs text-gray-500">From</div>
+              <div className="text-lg font-bold text-purple-600">₹{lowestPrice === Infinity ? '—' : lowestPrice.toLocaleString()}<span className="text-xs font-normal text-gray-400">/mo</span></div>
+            </div>
+            {/* Call button */}
+            {(property.contactInfo?.phone || property.contactInfo?.phones?.length > 0) && (
+              <a
+                href={`tel:${property.contactInfo.phone || property.contactInfo.phones?.[0]}`}
+                className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-xl transition text-sm"
+              >
+                <Phone className="w-4 h-4" />
+                Call Now
+              </a>
+            )}
+            {/* Enquiry button */}
+            <button
+              onClick={() => {
+                const el = document.getElementById('enquiry-section');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }}
+              className="flex-1 flex items-center justify-center gap-2 py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-xl transition text-sm"
+            >
+              <Calendar className="w-4 h-4" />
+              Enquire
+            </button>
+          </div>
+        </div>
+
+        {/* Bottom spacer for mobile sticky bar */}
+        <div className="lg:hidden h-20" />
 
         {/* ── Full-screen Photo Gallery Modal ── */}
         <AnimatePresence>
@@ -515,7 +608,37 @@ const PGDetailPage = () => {
                   <Input value={claimForm.businessName} onChange={(e) => setClaimForm(f => ({ ...f, businessName: e.target.value }))} placeholder="Optional" /></div>
                 <div><label className="block text-sm font-medium mb-1">Proof of Ownership *</label>
                   <textarea value={claimForm.proofOfOwnership} onChange={(e) => setClaimForm(f => ({ ...f, proofOfOwnership: e.target.value }))}
-                    placeholder="Property documents, utility bills, etc." className="w-full px-3 py-2 border rounded-lg resize-none h-24 text-sm" required /></div>
+                    placeholder="Describe your proof: property documents, utility bills, rental agreements, etc." className="w-full px-3 py-2 border rounded-lg resize-none h-24 text-sm" required /></div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Upload Documents</label>
+                  <p className="text-xs text-gray-500 mb-2">Upload property papers, utility bills, or other proof (JPG, PNG, PDF — max 5 files, 10MB each)</p>
+                  <input
+                    type="file"
+                    multiple
+                    accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []);
+                      if (files.length + claimFiles.length > 5) {
+                        toast({ title: "Too many files", description: "Maximum 5 files allowed", variant: "destructive" });
+                        return;
+                      }
+                      setClaimFiles(prev => [...prev, ...files]);
+                      e.target.value = '';
+                    }}
+                    className="w-full text-sm file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 cursor-pointer"
+                  />
+                  {claimFiles.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {claimFiles.map((file, idx) => (
+                        <div key={idx} className="flex items-center justify-between bg-gray-50 rounded px-3 py-1.5 text-sm">
+                          <span className="truncate flex-1 mr-2">{file.name}</span>
+                          <button type="button" onClick={() => setClaimFiles(prev => prev.filter((_, i) => i !== idx))}
+                            className="text-red-500 hover:text-red-700 text-xs font-medium">Remove</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="flex gap-3 pt-2">
                   <Button type="button" variant="outline" className="flex-1" onClick={() => setShowClaimModal(false)}>Cancel</Button>
                   <Button type="submit" className="flex-1 bg-purple-600 hover:bg-purple-700" disabled={isSubmitting}>

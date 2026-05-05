@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import api from '../../services/api';
+import { api } from '../../services/api';
 
 interface Owner {
   id: string;
   name: string;
   email: string;
   phone?: string;
+  role?: string;
 }
 
 interface DirectPropertyCreationModalProps {
@@ -24,7 +25,8 @@ export default function DirectPropertyCreationModal({
   const [owners, setOwners] = useState<Owner[]>([]);
   const [loadingOwners, setLoadingOwners] = useState(false);
   const [ownerSearchTerm, setOwnerSearchTerm] = useState('');
-  
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);  
   // Form state
   const [formData, setFormData] = useState({
     // Property details
@@ -37,6 +39,7 @@ export default function DirectPropertyCreationModal({
     checkOutTime: '11:00',
     // Location
     address: '',
+    area: '',
     city: '',
     state: '',
     country: 'India',
@@ -51,7 +54,7 @@ export default function DirectPropertyCreationModal({
     // Rules
     rules: [] as string[],
     // Owner selection
-    ownerMode: 'existing' as 'existing' | 'new',
+    ownerMode: 'none' as 'none' | 'existing' | 'new',
     existingOwnerId: '',
     ownerName: '',
     ownerEmail: '',
@@ -83,10 +86,41 @@ export default function DirectPropertyCreationModal({
   const loadOwners = async () => {
     try {
       setLoadingOwners(true);
-      const response = await api.get('/api/internal/platform/owners', {
-        params: { limit: 100 }
-      });
-      setOwners(response.data.data || []);
+      // Try superuser endpoint first (returns actual User records)
+      try {
+        const response = await api.get('/api/internal/superuser/users/owners');
+        const data = response.data?.data || response.data?.owners || response.data || [];
+        if (Array.isArray(data) && data.length > 0) {
+          setOwners(data.map((u: any) => ({
+            id: u.id,
+            name: u.name || u.full_name || 'Unknown',
+            email: u.email,
+            phone: u.phone
+          })));
+          return;
+        }
+      } catch (e) {
+        // Fallback to platform owners endpoint
+      }
+      
+      // Fallback: get all users with owner role from internal users
+      try {
+        const response = await api.get('/api/internal/users', { params: { limit: 200 } });
+        const users = response.data?.data || [];
+        if (Array.isArray(users)) {
+          setOwners(users.map((u: any) => ({
+            id: u.id,
+            name: u.name || 'Unknown',
+            email: u.email,
+            phone: u.phone
+          })));
+          return;
+        }
+      } catch (e) {
+        console.error('Error loading users:', e);
+      }
+      
+      setOwners([]);
     } catch (err) {
       console.error('Error loading owners:', err);
     } finally {
@@ -117,6 +151,37 @@ export default function DirectPropertyCreationModal({
     }));
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    const newFiles = Array.from(files);
+    const totalFiles = selectedFiles.length + newFiles.length;
+    if (totalFiles > 10) {
+      alert('Maximum 10 images allowed per property');
+      return;
+    }
+
+    const validFiles = newFiles.filter(file => {
+      if (file.size > 5 * 1024 * 1024) {
+        alert(`File "${file.name}" exceeds 5MB limit`);
+        return false;
+      }
+      return true;
+    });
+
+    setSelectedFiles(prev => [...prev, ...validFiles]);
+    const newPreviews = validFiles.map(file => URL.createObjectURL(file));
+    setPreviewUrls(prev => [...prev, ...newPreviews]);
+    e.target.value = '';
+  };
+
+  const handleFileRemove = (index: number) => {
+    URL.revokeObjectURL(previewUrls[index]);
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -133,6 +198,7 @@ export default function DirectPropertyCreationModal({
         checkOutTime: formData.checkOutTime || null,
         location: {
           address: formData.address,
+          area: formData.area,
           city: formData.city,
           state: formData.state,
           country: formData.country,
@@ -155,7 +221,25 @@ export default function DirectPropertyCreationModal({
         ownerPhone: formData.ownerMode === 'new' ? formData.ownerPhone : null
       };
 
-      await api.post('/api/internal/properties/direct', payload);
+      const response = await api.post('/api/internal/properties/direct', payload);
+      const newPropertyId = response.data?.data?.id || response.data?.property?.id;
+
+      // Upload images if any were selected
+      if (selectedFiles.length > 0 && newPropertyId) {
+        try {
+          const imageFormData = new FormData();
+          selectedFiles.forEach(file => {
+            imageFormData.append('images', file);
+          });
+          await api.post(`/api/internal/properties/${newPropertyId}/upload-images`, imageFormData, {
+            headers: { 'Content-Type': undefined }
+          } as any);
+        } catch (uploadErr) {
+          console.error('Image upload failed:', uploadErr);
+          // Property was created successfully, just images failed
+        }
+      }
+
       onSuccess();
       onClose();
       resetForm();
@@ -167,6 +251,10 @@ export default function DirectPropertyCreationModal({
   };
 
   const resetForm = () => {
+    // Revoke preview URLs to free memory
+    previewUrls.forEach(url => URL.revokeObjectURL(url));
+    setSelectedFiles([]);
+    setPreviewUrls([]);
     setFormData({
       name: '',
       description: '',
@@ -176,6 +264,7 @@ export default function DirectPropertyCreationModal({
       checkInTime: '14:00',
       checkOutTime: '11:00',
       address: '',
+      area: '',
       city: '',
       state: '',
       country: 'India',
@@ -186,7 +275,7 @@ export default function DirectPropertyCreationModal({
       contactWhatsapp: '',
       amenities: [],
       rules: [],
-      ownerMode: 'existing',
+      ownerMode: 'none',
       existingOwnerId: '',
       ownerName: '',
       ownerEmail: '',
@@ -239,12 +328,23 @@ export default function DirectPropertyCreationModal({
                   <input
                     type="radio"
                     name="ownerMode"
+                    value="none"
+                    checked={formData.ownerMode === 'none'}
+                    onChange={handleInputChange}
+                    className="mr-2"
+                  />
+                  No Owner (Unclaimed)
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="radio"
+                    name="ownerMode"
                     value="existing"
                     checked={formData.ownerMode === 'existing'}
                     onChange={handleInputChange}
                     className="mr-2"
                   />
-                  Select Existing Owner
+                  Select Existing User
                 </label>
                 <label className="flex items-center">
                   <input
@@ -259,35 +359,45 @@ export default function DirectPropertyCreationModal({
                 </label>
               </div>
 
+              {formData.ownerMode === 'none' && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
+                  <strong>Unclaimed property</strong> — this property will be listed without an owner. The real owner can claim it later through the website.
+                </div>
+              )}
+
               {formData.ownerMode === 'existing' ? (
                 <div>
                   <input
                     type="text"
-                    placeholder="Search owners by name or email..."
+                    placeholder="Search users by name or email..."
                     value={ownerSearchTerm}
                     onChange={(e) => setOwnerSearchTerm(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 text-gray-900"
                   />
-                  <select
-                    name="existingOwnerId"
-                    value={formData.existingOwnerId}
-                    onChange={handleInputChange}
-                    required={formData.ownerMode === 'existing'}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900"
-                  >
-                    <option value="">Select an owner...</option>
-                    {loadingOwners ? (
-                      <option disabled>Loading owners...</option>
-                    ) : (
-                      filteredOwners.map(owner => (
+                  {loadingOwners ? (
+                    <p className="text-sm text-gray-500 py-2">Loading users...</p>
+                  ) : (
+                    <select
+                      name="existingOwnerId"
+                      value={formData.existingOwnerId}
+                      onChange={handleInputChange}
+                      required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900"
+                    >
+                      <option value="">Select a user...</option>
+                      {filteredOwners.map(owner => (
                         <option key={owner.id} value={owner.id}>
                           {owner.name} ({owner.email})
                         </option>
-                      ))
-                    )}
-                  </select>
+                      ))}
+                      {filteredOwners.length === 0 && (
+                        <option disabled>No users found</option>
+                      )}
+                    </select>
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">{owners.length} users loaded</p>
                 </div>
-              ) : (
+              ) : formData.ownerMode === 'new' ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Owner Name *</label>
@@ -325,7 +435,7 @@ export default function DirectPropertyCreationModal({
                     />
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
 
             {/* Basic Property Info */}
@@ -430,6 +540,17 @@ export default function DirectPropertyCreationModal({
                     onChange={handleInputChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900"
                     placeholder="Street address"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Area / Locality</label>
+                  <input
+                    type="text"
+                    name="area"
+                    value={formData.area}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900"
+                    placeholder="e.g., Koramangala, BTM Layout"
                   />
                 </div>
                 <div>
@@ -557,6 +678,48 @@ export default function DirectPropertyCreationModal({
                     <span className="text-gray-700">{rule}</span>
                   </label>
                 ))}
+              </div>
+            </div>
+
+            {/* Images */}
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Property Images ({selectedFiles.length}/10)</h3>
+              {previewUrls.length > 0 && (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                  {previewUrls.map((url, idx) => (
+                    <div key={idx} className="relative group rounded-lg overflow-hidden border border-gray-200">
+                      <img
+                        src={url}
+                        alt={`Preview ${idx + 1}`}
+                        className="w-full h-24 object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleFileRemove(idx)}
+                        className="absolute top-1 right-1 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700"
+                      >
+                        ✕
+                      </button>
+                      <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs px-2 py-0.5 truncate">
+                        {selectedFiles[idx]?.name}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-3">
+                <label className={`px-4 py-2 text-sm rounded-lg cursor-pointer transition-colors ${selectedFiles.length >= 10 ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'}`}>
+                  📷 Select Images
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    onChange={handleFileSelect}
+                    disabled={selectedFiles.length >= 10}
+                    className="hidden"
+                  />
+                </label>
+                <span className="text-xs text-gray-500">Max 5MB each. JPEG, PNG, GIF, WebP. Images will be uploaded after property creation.</span>
               </div>
             </div>
           </div>

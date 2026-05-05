@@ -13,6 +13,10 @@ import SignupPage from '@/pages/SignupPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import PGListingPage from '@/pages/PGListingPage';
 import PGDetailPage from '@/pages/PGDetailPage';
+import PrivacyPolicyPage from '@/pages/PrivacyPolicyPage';
+import TermsOfServicePage from '@/pages/TermsOfServicePage';
+import AboutPage from '@/pages/AboutPage';
+import Footer from '@/components/Footer';
 import { AuthProvider } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 
@@ -31,6 +35,9 @@ function App() {
             <Route path="/search" element={<SearchResultsPage />} />
             <Route path="/pgs" element={<PGListingPage />} />
             <Route path="/pg/:identifier" element={<PGDetailPage />} />
+            <Route path="/privacy" element={<PrivacyPolicyPage />} />
+            <Route path="/terms" element={<TermsOfServicePage />} />
+            <Route path="/about" element={<AboutPage />} />
             <Route 
               path="/admin" 
               element={
@@ -50,6 +57,7 @@ function App() {
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </main>
+        <Footer />
         <Toaster />
       </div>
     </AuthProvider>

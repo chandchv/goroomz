@@ -31,7 +31,7 @@ const Property = sequelize.define('Property', {
   },
   ownerId: {
     type: DataTypes.UUID,
-    allowNull: false,
+    allowNull: true,
     field: 'owner_id',
     references: {
       model: 'users',

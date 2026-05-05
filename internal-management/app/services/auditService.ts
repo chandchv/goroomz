@@ -80,7 +80,7 @@ class AuditService {
     filters: AuditLogFilters = {}
   ): Promise<AuditLogResponse> {
     const response = await api.get(
-      `/internal/audit/resource/${resourceType}/${resourceId}`,
+      `/api/internal/audit/resource/${resourceType}/${resourceId}`,
       { params: filters }
     );
     return response.data.data;

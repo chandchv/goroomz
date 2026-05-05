@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from '@/components/ui/use-toast';
 import { motion, AnimatePresence } from 'framer-motion';
+import apiService from '@/services/api';
 import leadService from '../services/leadService';
 
 const PropertyListingWizard = ({ isOpen, onClose, onSubmit }) => {
@@ -37,6 +38,7 @@ const PropertyListingWizard = ({ isOpen, onClose, onSubmit }) => {
     
     // Step 3: Location
     address: '',
+    area: '',
     city: '',
     state: '',
     pincode: '',
@@ -49,7 +51,8 @@ const PropertyListingWizard = ({ isOpen, onClose, onSubmit }) => {
     
     // For PGs
     pgSharingOptions: [],
-    monthlyRate: '',
+    sharingPrices: {},      // { single: 12000, double: 8000, ... }
+    sharingDailyPrices: {}, // { single: 500, double: 350, ... }
     securityDeposit: '',
     noticePeriod: '30',
     foodIncluded: false,
@@ -58,6 +61,7 @@ const PropertyListingWizard = ({ isOpen, onClose, onSubmit }) => {
     propertyType: '', // 'entire_place', 'private_room', 'shared_room'
     bedrooms: '1',
     bathrooms: '1',
+    monthlyRate: '', // Used for Independent Homes
     
     // Common fields
     maxGuests: '1',
@@ -189,9 +193,12 @@ const PropertyListingWizard = ({ isOpen, onClose, onSubmit }) => {
         toast({ title: "Please enter daily rate", variant: "destructive" });
         return;
       }
-      if (formData.category === 'PG' && !formData.monthlyRate) {
-        toast({ title: "Please enter monthly rent", variant: "destructive" });
-        return;
+      if (formData.category === 'PG' && formData.pgSharingOptions.length > 0) {
+        const hasAtLeastOnePrice = formData.pgSharingOptions.some(opt => formData.sharingPrices[opt] > 0);
+        if (!hasAtLeastOnePrice) {
+          toast({ title: "Please enter monthly rent for at least one sharing type", variant: "destructive" });
+          return;
+        }
       }
       if ((formData.category === 'Home Stay' || formData.category === 'Independent Home')) {
         if (!formData.propertyType) {
@@ -339,7 +346,6 @@ const PropertyListingWizard = ({ isOpen, onClose, onSubmit }) => {
       let imageObjects = [];
       
       if (imagePreviews.length > 0) {
-        // Convert all image files to base64
         try {
           const base64Images = await Promise.all(
             imagePreviews.map(preview => convertToBase64(preview.file))
@@ -360,93 +366,85 @@ const PropertyListingWizard = ({ isOpen, onClose, onSubmit }) => {
         }
       }
 
-      // Generate unique submission ID for tracking
-      const submissionId = generateSubmissionId();
+      // Map category to property type
+      const typeMap = { 'PG': 'pg', 'Hotel Room': 'hotel', 'Home Stay': 'apartment', 'Independent Home': 'apartment' };
+      const propertyType = typeMap[formData.category] || 'pg';
 
-      // Prepare lead data using the service
-      const leadData = leadService.prepareLead(formData, imageObjects);
+      // Build metadata based on category
+      let metadata = {};
+      if (formData.category === 'PG') {
+        const sharingPrices = {};
+        const sharingDailyPrices = {};
+        (formData.pgSharingOptions || []).forEach(opt => {
+          if (formData.sharingPrices[opt]) sharingPrices[opt] = parseFloat(formData.sharingPrices[opt]) || 0;
+          if (formData.sharingDailyPrices[opt]) sharingDailyPrices[opt] = parseFloat(formData.sharingDailyPrices[opt]) || 0;
+        });
+        const allPrices = Object.values(sharingPrices).filter(p => p > 0);
+        const basePrice = allPrices.length > 0 ? Math.min(...allPrices) : 0;
 
-      // Submit lead to backend with retry logic
-      const result = await submitLeadToBackend(leadData);
-      
+        metadata = {
+          genderPreference: formData.genderPreference || 'any',
+          pgOptions: {
+            sharingTypes: formData.pgSharingOptions || [],
+            basePrice,
+            sharingPrices,
+            sharingDailyPrices,
+            securityDeposit: parseFloat(formData.securityDeposit) || 0,
+            noticePeriod: formData.noticePeriod || '30 days',
+            foodIncluded: formData.foodIncluded || false,
+          }
+        };
+      } else if (formData.category === 'Hotel Room') {
+        metadata = {
+          hotelRoomTypes: formData.hotelRoomTypes || [],
+          priceRange: { min: parseFloat(formData.dailyRate) || 0, max: parseFloat(formData.dailyRate) || 0 }
+        };
+      } else {
+        metadata = {
+          bedrooms: parseInt(formData.bedrooms) || 1,
+          bathrooms: parseInt(formData.bathrooms) || 1,
+          propertyType: formData.propertyType || 'entire_place',
+        };
+      }
+
+      // Create property directly via API
+      const result = await apiService.post('/properties', {
+        name: formData.title,
+        description: formData.description,
+        type: propertyType,
+        location: {
+          address: formData.address,
+          area: formData.area || formData.landmark || '',
+          city: formData.city,
+          state: formData.state,
+          country: 'India',
+          pincode: formData.pincode,
+          landmark: formData.landmark,
+        },
+        amenities: formData.amenities || [],
+        images: imageObjects,
+        rules: formData.rules || [],
+        totalRooms: parseInt(formData.totalRooms) || null,
+        metadata,
+      });
+
       setSubmissionResult(result);
       
-      // Show success message
       toast({
-        title: "Property Submitted Successfully!",
-        description: `Your tracking reference is: ${result.data.lead.trackingReference}`,
-        variant: "default"
+        title: "Property Submitted! 🎉",
+        description: "Your property has been submitted for review. Our team will approve it shortly.",
       });
 
       // Call the original onSubmit callback if provided
       if (onSubmit) {
-        // Build the original property object for backward compatibility
-        const baseProperty = {
-          title: formData.title,
-          description: formData.description,
-          category: formData.category,
-          location: {
-            address: formData.address,
-            city: formData.city,
-            state: formData.state,
-            pincode: formData.pincode,
-            landmark: formData.landmark
-          },
-          maxGuests: parseInt(formData.maxGuests),
-          amenities: formData.amenities,
-          rules: formData.rules,
-          images: imageObjects,
-          // Add lead tracking info
-          leadId: result.data.lead.id,
-          trackingReference: result.data.lead.trackingReference
-        };
-
-        let propertyData = { ...baseProperty };
-
-        // Add category-specific data
-        if (formData.category === 'Hotel Room') {
-          propertyData = {
-            ...propertyData,
-            roomType: 'Hotel Room',
-            price: parseFloat(formData.dailyRate),
-            pricingType: 'daily',
-            hotelRoomTypes: formData.hotelRoomTypes
-          };
-        } else if (formData.category === 'PG') {
-          propertyData = {
-            ...propertyData,
-            roomType: 'PG',
-            price: parseFloat(formData.monthlyRate),
-            pricingType: 'monthly',
-            pgOptions: {
-              sharingTypes: formData.pgSharingOptions,
-              securityDeposit: parseFloat(formData.securityDeposit) || 0,
-              noticePeriod: parseInt(formData.noticePeriod),
-              foodIncluded: formData.foodIncluded
-            }
-          };
-        } else if (formData.category === 'Home Stay' || formData.category === 'Independent Home') {
-          propertyData = {
-            ...propertyData,
-            roomType: formData.propertyType,
-            price: parseFloat(formData.dailyRate || formData.monthlyRate),
-            pricingType: formData.category === 'Home Stay' ? 'daily' : 'monthly',
-            propertyDetails: {
-              bedrooms: parseInt(formData.bedrooms),
-              bathrooms: parseInt(formData.bathrooms),
-              propertyType: formData.propertyType
-            }
-          };
-        }
-
-        onSubmit(propertyData);
+        onSubmit(result.data);
       }
 
-      // Move to confirmation step
+      // Move to success step
       setCurrentStep(8);
 
     } catch (error) {
-      console.error('Lead submission failed:', error);
+      console.error('Property submission failed:', error);
       
       toast({
         title: "Submission Failed",
@@ -606,6 +604,15 @@ const PropertyListingWizard = ({ isOpen, onClose, onSubmit }) => {
                     />
                   </div>
                   <div>
+                    <Label htmlFor="area">Area / Locality *</Label>
+                    <Input
+                      id="area"
+                      value={formData.area}
+                      onChange={(e) => setFormData(prev => ({ ...prev, area: e.target.value }))}
+                      placeholder="e.g., Koramangala, Whitefield, BTM Layout"
+                    />
+                  </div>
+                  <div>
                     <Label htmlFor="city">City *</Label>
                     <Input
                       id="city"
@@ -726,17 +733,51 @@ const PropertyListingWizard = ({ isOpen, onClose, onSubmit }) => {
                         ))}
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="monthlyRate">Monthly Rent (₹) *</Label>
-                        <Input
-                          id="monthlyRate"
-                          type="number"
-                          value={formData.monthlyRate}
-                          onChange={(e) => setFormData(prev => ({ ...prev, monthlyRate: e.target.value }))}
-                          placeholder="8000"
-                        />
+                    {/* Per-sharing-type pricing */}
+                    {formData.pgSharingOptions.length > 0 && (
+                      <div className="space-y-4">
+                        <Label className="text-base font-semibold block">Pricing per Sharing Type</Label>
+                        <p className="text-sm text-gray-500 -mt-2">Enter monthly and daily rates for each selected sharing type</p>
+                        {formData.pgSharingOptions.map(opt => {
+                          const option = pgSharingOptions.find(o => o.id === opt);
+                          return (
+                            <div key={opt} className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                              <div className="flex items-center gap-2 mb-3">
+                                <span className="text-lg">{option?.icon}</span>
+                                <span className="font-semibold text-gray-900">{option?.name || opt}</span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <Label className="text-xs text-gray-500">Monthly Rent (₹) *</Label>
+                                  <Input
+                                    type="number"
+                                    value={formData.sharingPrices[opt] || ''}
+                                    onChange={(e) => setFormData(prev => ({
+                                      ...prev,
+                                      sharingPrices: { ...prev.sharingPrices, [opt]: e.target.value }
+                                    }))}
+                                    placeholder={opt === 'single' ? '12000' : opt === 'double' ? '8000' : opt === 'triple' ? '6500' : '5000'}
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs text-gray-500">Daily Rate (₹)</Label>
+                                  <Input
+                                    type="number"
+                                    value={formData.sharingDailyPrices[opt] || ''}
+                                    onChange={(e) => setFormData(prev => ({
+                                      ...prev,
+                                      sharingDailyPrices: { ...prev.sharingDailyPrices, [opt]: e.target.value }
+                                    }))}
+                                    placeholder={opt === 'single' ? '500' : opt === 'double' ? '350' : opt === 'triple' ? '300' : '250'}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="securityDeposit">Security Deposit (₹)</Label>
                         <Input

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Home, Menu, X, Building, BedDouble, Shield, LogOut, UserCircle, Plus } from 'lucide-react';
+import { Home, Menu, X, Building, BedDouble, Shield, LogOut, UserCircle, Plus, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { NavLink, Link } from 'react-router-dom';
 import {
@@ -13,11 +13,29 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import CategoryOwnerSignupModal from '@/components/CategoryOwnerSignupModal';
 import SmartSearchBar from '@/components/SmartSearchBar';
+import apiService from '@/services/api';
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
+  const [newEnquiryCount, setNewEnquiryCount] = useState(0);
   const { user, logout } = useAuth();
+
+  // Fetch new enquiry count for property owners
+  useEffect(() => {
+    if (user?.role === 'owner') {
+      apiService.get('/enquiries/my?status=new&limit=1')
+        .then(res => setNewEnquiryCount(res.pagination?.total || 0))
+        .catch(() => {});
+      // Refresh every 60 seconds
+      const interval = setInterval(() => {
+        apiService.get('/enquiries/my?status=new&limit=1')
+          .then(res => setNewEnquiryCount(res.pagination?.total || 0))
+          .catch(() => {});
+      }, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   const navLinks = [
     { name: 'Home', path: '/' },
@@ -78,6 +96,16 @@ const Header = () => {
           </nav>
 
           <div className="flex items-center gap-2">
+            {user && user.role === 'owner' && (
+              <Link to="/owner/dashboard" className="relative p-2 text-gray-600 hover:text-purple-600 transition-colors" title="Enquiries">
+                <Bell className="h-5 w-5" />
+                {newEnquiryCount > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full px-1">
+                    {newEnquiryCount > 9 ? '9+' : newEnquiryCount}
+                  </span>
+                )}
+              </Link>
+            )}
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

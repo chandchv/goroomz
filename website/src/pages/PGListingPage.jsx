@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { getImageUrl } from '@/utils/imageUtils';
 import { toast } from '@/components/ui/use-toast';
 import Pagination from '@/components/Pagination';
 import propertyService from '@/services/propertyService';
@@ -97,7 +98,7 @@ const PGListingPage = () => {
       >
         <div className="relative h-48 bg-gradient-to-br from-purple-100 to-pink-100">
           {property.images?.[0] ? (
-            <img src={property.images[0].url || property.images[0]} alt={property.name} className="w-full h-full object-cover" />
+            <img src={getImageUrl(property.images[0]) || ''} alt={property.name} className="w-full h-full object-cover" />
           ) : (
             <div className="w-full h-full flex items-center justify-center"><span className="text-5xl">🏠</span></div>
           )}
@@ -107,7 +108,14 @@ const PGListingPage = () => {
           )}
         </div>
         <div className="p-4">
-          <h3 className="font-bold text-lg mb-1 line-clamp-1">{property.name}</h3>
+          <div className="flex items-center gap-2 mb-1">
+            <h3 className="font-bold text-lg line-clamp-1">{property.name}</h3>
+            {property.metadata?.isClaimed && (
+              <span className="flex-shrink-0 px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-semibold rounded flex items-center gap-0.5">
+                ✓ Verified
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-1 text-sm text-muted-foreground mb-2">
             <MapPin className="w-4 h-4" />
             <span className="line-clamp-1">{property.location?.area || property.location?.city}</span>

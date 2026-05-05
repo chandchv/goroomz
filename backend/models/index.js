@@ -28,6 +28,9 @@ const BookingAuditLog = require('./BookingAuditLog');
 // Property claim model
 const PropertyClaim = require('./PropertyClaim');
 
+// Enquiry model
+const Enquiry = require('./Enquiry');
+
 // Notification models
 const Notification = require('./Notification');
 const NotificationPreference = require('./NotificationPreference');
@@ -436,6 +439,17 @@ Booking.hasMany(BookingAuditLog, {
   as: 'auditLogs'
 });
 
+// Enquiry associations
+Enquiry.belongsTo(Property, {
+  foreignKey: 'propertyId',
+  as: 'property'
+});
+
+Property.hasMany(Enquiry, {
+  foreignKey: 'propertyId',
+  as: 'enquiries'
+});
+
 // PropertyClaim associations
 PropertyClaim.belongsTo(Property, {
   foreignKey: 'propertyId',
@@ -639,6 +653,7 @@ module.exports = {
   Category,
   Property,
   PropertyClaim,
+  Enquiry,
   Lead,
   PropertyOwner,
   CommunicationRecord,

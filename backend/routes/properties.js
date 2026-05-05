@@ -1,10 +1,41 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const { body, query, param, validationResult } = require('express-validator');
 const { Property, PropertyClaim, User } = require('../models');
 const { Op } = require('sequelize');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
+
+// Multer setup for claim document uploads
+const claimDocsDir = path.join(__dirname, '..', 'uploads', 'claims');
+if (!fs.existsSync(claimDocsDir)) {
+  fs.mkdirSync(claimDocsDir, { recursive: true });
+}
+
+const claimDocStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, claimDocsDir),
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'claim-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const claimDocUpload = multer({
+  storage: claimDocStorage,
+  limits: { fileSize: 10 * 1024 * 1024, files: 5 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = /jpeg|jpg|png|pdf|doc|docx/;
+    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
+    const mime = allowed.test(file.mimetype) || file.mimetype === 'application/pdf' ||
+      file.mimetype === 'application/msword' ||
+      file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    if (ext || mime) return cb(null, true);
+    cb(new Error('Only images (JPG, PNG) and documents (PDF, DOC) are allowed'));
+  }
+});
 
 // Validation middleware
 const validate = (req, res, next) => {
@@ -14,6 +45,131 @@ const validate = (req, res, next) => {
   }
   next();
 };
+
+/**
+ * POST /api/properties
+ * Create a new property listing (for property owners)
+ * Property is created with approvalStatus: 'pending' — requires admin approval
+ */
+router.post('/', authenticateToken, async (req, res) => {
+  try {
+    // Only owners can create properties
+    if (!['owner', 'category_owner', 'admin', 'superuser'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Only property owners can create listings' });
+    }
+
+    const {
+      name, description, type, location, contactInfo,
+      amenities, images, rules, totalFloors, totalRooms,
+      checkInTime, checkOutTime, metadata
+    } = req.body;
+
+    // Validate required fields
+    if (!name || !type || !location) {
+      return res.status(400).json({ success: false, message: 'Name, type, and location are required' });
+    }
+
+    if (!['pg', 'hostel', 'hotel', 'apartment'].includes(type)) {
+      return res.status(400).json({ success: false, message: 'Type must be pg, hostel, hotel, or apartment' });
+    }
+
+    const property = await Property.create({
+      name,
+      description: description || '',
+      type,
+      ownerId: req.user.id,
+      location: location || {},
+      contactInfo: contactInfo || { phone: req.user.phone, email: req.user.email },
+      amenities: amenities || [],
+      images: images || [],
+      rules: rules || [],
+      totalFloors: totalFloors || null,
+      totalRooms: totalRooms || null,
+      checkInTime: checkInTime || null,
+      checkOutTime: checkOutTime || null,
+      metadata: metadata || {},
+      isActive: true,
+      isFeatured: false,
+      approvalStatus: 'pending' // Requires admin approval
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Property submitted for review. Our team will approve it shortly.',
+      data: property
+    });
+  } catch (error) {
+    console.error('Error creating property:', error);
+    res.status(500).json({ success: false, message: 'Failed to create property' });
+  }
+});
+
+/**
+ * PUT /api/properties/:id
+ * Update a property (owner can update their own, admin can update any)
+ */
+router.put('/:id', authenticateToken, async (req, res) => {
+  try {
+    const property = await Property.findByPk(req.params.id);
+    if (!property) {
+      return res.status(404).json({ success: false, message: 'Property not found' });
+    }
+
+    // Check ownership (owners can only edit their own, admins can edit any)
+    if (!['admin', 'superuser'].includes(req.user.role) && property.ownerId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'You can only edit your own properties' });
+    }
+
+    const allowedFields = [
+      'name', 'description', 'type', 'location', 'contactInfo',
+      'amenities', 'images', 'rules', 'totalFloors', 'totalRooms',
+      'checkInTime', 'checkOutTime', 'metadata'
+    ];
+
+    const updates = {};
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
+      }
+    }
+    // Also accept snake_case variants
+    if (req.body.contact_info !== undefined) updates.contactInfo = req.body.contact_info;
+    if (req.body.total_floors !== undefined) updates.totalFloors = req.body.total_floors;
+    if (req.body.total_rooms !== undefined) updates.totalRooms = req.body.total_rooms;
+
+    await property.update(updates);
+
+    res.json({ success: true, message: 'Property updated', data: property });
+  } catch (error) {
+    console.error('Error updating property:', error);
+    res.status(500).json({ success: false, message: 'Failed to update property' });
+  }
+});
+
+/**
+ * DELETE /api/properties/:id
+ * Delete (deactivate) a property
+ */
+router.delete('/:id', authenticateToken, async (req, res) => {
+  try {
+    const property = await Property.findByPk(req.params.id);
+    if (!property) {
+      return res.status(404).json({ success: false, message: 'Property not found' });
+    }
+
+    // Check ownership
+    if (!['admin', 'superuser'].includes(req.user.role) && property.ownerId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'You can only delete your own properties' });
+    }
+
+    // Soft delete
+    await property.update({ isActive: false });
+    res.json({ success: true, message: 'Property deleted' });
+  } catch (error) {
+    console.error('Error deleting property:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete property' });
+  }
+});
 
 /**
  * GET /api/properties
@@ -147,10 +303,12 @@ router.get('/', [
 /**
  * GET /api/properties/featured
  * Get featured properties for homepage
+ * Falls back to recent approved properties if none are explicitly featured
  */
 router.get('/featured', async (req, res) => {
   try {
-    const properties = await Property.findAll({
+    // First try to get explicitly featured properties
+    let properties = await Property.findAll({
       where: {
         isActive: true,
         approvalStatus: 'approved',
@@ -160,10 +318,124 @@ router.get('/featured', async (req, res) => {
       order: [['createdAt', 'DESC']]
     });
 
-    res.json({ success: true, data: properties });
+    // Fallback: if no featured properties, return recent approved ones
+    if (properties.length === 0) {
+      properties = await Property.findAll({
+        where: {
+          isActive: true,
+          approvalStatus: 'approved'
+        },
+        limit: 8,
+        order: [['createdAt', 'DESC']]
+      });
+    }
+
+    // Normalize property data for frontend compatibility
+    const normalizedProperties = properties.map(p => {
+      const data = p.toJSON();
+      // Ensure frontend-compatible fields exist
+      if (!data.title) data.title = data.name;
+      if (!data.category) {
+        const typeMap = { pg: 'PG', hotel: 'Hotel Room', hostel: 'PG', apartment: 'Independent Home' };
+        data.category = typeMap[data.type] || 'PG';
+      }
+      // Extract a display price from metadata if no top-level price
+      if (!data.price && data.metadata?.pgOptions?.basePrice) {
+        data.price = data.metadata.pgOptions.basePrice;
+      }
+      return data;
+    });
+
+    res.json({ success: true, data: normalizedProperties });
   } catch (error) {
     console.error('Error fetching featured properties:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch featured properties' });
+  }
+});
+
+/**
+ * GET /api/properties/stats
+ * Quick stats for homepage — total count, top areas with counts
+ */
+router.get('/stats', async (req, res) => {
+  try {
+    const { sequelize } = require('../models');
+
+    const [[{ total }]] = await sequelize.query(
+      `SELECT count(*) as total FROM properties WHERE is_active = true AND approval_status = 'approved'`
+    );
+
+    const [topAreas] = await sequelize.query(`
+      SELECT location->>'area' as area, count(*) as count
+      FROM properties
+      WHERE is_active = true AND approval_status = 'approved'
+        AND location->>'area' IS NOT NULL AND location->>'area' != ''
+      GROUP BY location->>'area'
+      ORDER BY count DESC
+      LIMIT 10
+    `);
+
+    res.set('Cache-Control', 'public, max-age=300');
+    res.json({ success: true, data: { total: parseInt(total), topAreas } });
+  } catch (error) {
+    console.error('Error fetching property stats:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch stats' });
+  }
+});
+
+/**
+ * GET /api/properties/:id/similar
+ * Get similar properties in the same area/city
+ */
+router.get('/:id/similar', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const limit = parseInt(req.query.limit) || 6;
+
+    // Get the source property
+    const source = await Property.findByPk(id, { attributes: ['id', 'type', 'location'] });
+    if (!source) {
+      return res.status(404).json({ success: false, message: 'Property not found' });
+    }
+
+    const area = source.location?.area || '';
+    const city = source.location?.city || '';
+
+    // Find similar: same area first, then same city, exclude self
+    const { sequelize } = require('../models');
+    const [results] = await sequelize.query(`
+      SELECT id, name, slug, type, location, amenities, images, rating, metadata,
+             is_featured as "isFeatured",
+             CASE
+               WHEN location->>'area' = :area THEN 1
+               WHEN location->>'city' = :city THEN 2
+               ELSE 3
+             END as relevance
+      FROM properties
+      WHERE is_active = true
+        AND approval_status = 'approved'
+        AND id != :id
+        AND (location->>'area' = :area OR location->>'city' = :city)
+      ORDER BY relevance, is_featured DESC, created_at DESC
+      LIMIT :limit
+    `, {
+      replacements: { id, area, city, limit }
+    });
+
+    // Normalize for frontend
+    const similar = results.map(p => {
+      const typeMap = { pg: 'PG', hotel: 'Hotel Room', hostel: 'PG', apartment: 'Independent Home' };
+      if (!p.title) p.title = p.name;
+      if (!p.category) p.category = typeMap[p.type] || 'PG';
+      if (!p.price && p.metadata?.pgOptions?.basePrice) p.price = p.metadata.pgOptions.basePrice;
+      return p;
+    });
+
+    res.set('Cache-Control', 'public, max-age=120');
+    res.json({ success: true, data: similar });
+  } catch (error) {
+    console.error('Error fetching similar properties:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch similar properties' });
   }
 });
 
@@ -174,15 +446,22 @@ router.get('/featured', async (req, res) => {
 router.get('/areas', async (req, res) => {
   try {
     const { sequelize } = require('../models');
+    const { type } = req.query;
+    let typeFilter = '';
+    const replacements = {};
+    if (type) {
+      typeFilter = ' AND type = :type';
+      replacements.type = type;
+    }
     const [results] = await sequelize.query(`
       SELECT DISTINCT location->>'area' as area, COUNT(*) as count
       FROM properties
       WHERE is_active = true AND approval_status = 'approved'
-      AND location->>'area' IS NOT NULL AND location->>'area' != ''
+      AND location->>'area' IS NOT NULL AND location->>'area' != ''${typeFilter}
       GROUP BY location->>'area'
       ORDER BY count DESC
       LIMIT 50
-    `);
+    `, { replacements });
 
     res.json({ success: true, data: results });
   } catch (error) {
@@ -327,17 +606,24 @@ router.get('/:identifier', async (req, res) => {
  * POST /api/properties/:identifier/claim
  * Submit a claim request for a property (by UUID or slug)
  */
-router.post('/:identifier/claim', [
-  body('name').trim().notEmpty().withMessage('Name is required'),
-  body('email').isEmail().withMessage('Valid email is required'),
-  body('phone').matches(/^[0-9]{10}$/).withMessage('Valid 10-digit phone is required'),
-  body('businessName').optional().trim(),
-  body('proofOfOwnership').trim().notEmpty().withMessage('Proof of ownership description is required'),
-  validate
-], optionalAuth, async (req, res) => {
+router.post('/:identifier/claim', claimDocUpload.array('documents', 5), optionalAuth, async (req, res) => {
   try {
     const { identifier } = req.params;
     const { name, email, phone, businessName, proofOfOwnership, additionalInfo } = req.body;
+
+    // Validate required fields
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'Name is required' });
+    }
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ success: false, message: 'Valid email is required' });
+    }
+    if (!phone || !/^[0-9]{10}$/.test(phone)) {
+      return res.status(400).json({ success: false, message: 'Valid 10-digit phone is required' });
+    }
+    if (!proofOfOwnership || !proofOfOwnership.trim()) {
+      return res.status(400).json({ success: false, message: 'Proof of ownership description is required' });
+    }
 
     // Check if identifier is UUID or slug
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
@@ -372,6 +658,15 @@ router.post('/:identifier/claim', [
       });
     }
 
+    // Build documents array from uploaded files
+    const documents = (req.files || []).map(file => ({
+      filename: file.filename,
+      originalName: file.originalname,
+      path: `/uploads/claims/${file.filename}`,
+      size: file.size,
+      mimeType: file.mimetype
+    }));
+
     // Create claim
     const claim = await PropertyClaim.create({
       propertyId: property.id,
@@ -381,7 +676,8 @@ router.post('/:identifier/claim', [
       claimantPhone: phone,
       businessName,
       proofOfOwnership,
-      additionalInfo: additionalInfo || {},
+      documents,
+      additionalInfo: additionalInfo ? (typeof additionalInfo === 'string' ? JSON.parse(additionalInfo) : additionalInfo) : {},
       status: 'pending'
     });
 

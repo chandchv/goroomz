@@ -126,6 +126,14 @@ class SuperuserService {
     await api.put(`/api/internal/superuser/property-owners/${id}/deactivate`);
   }
 
+  async activatePropertyOwner(id: string): Promise<void> {
+    await api.put(`/api/internal/superuser/property-owners/${id}/activate`);
+  }
+
+  async resetOwnerPassword(id: string, newPassword: string): Promise<void> {
+    await api.put(`/api/internal/superuser/property-owners/${id}/reset-password`, { newPassword });
+  }
+
   async sendCredentialsEmail(ownerId: string, credentials: GeneratedCredentials): Promise<void> {
     await api.post(`/api/internal/superuser/property-owners/${ownerId}/send-credentials`, credentials);
   }

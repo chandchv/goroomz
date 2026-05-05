@@ -26,6 +26,7 @@ const notificationRoutes = require('./routes/notifications');
 const amadeusRoutes = require('./routes/amadeus');
 const searchRoutes = require('./routes/search');
 const internalRoutes = require('./routes/internal');
+const enquiryRoutes = require('./routes/enquiries');
 
 // Notification service for scheduler initialization
 const notificationService = require('./services/notifications');
@@ -57,7 +58,8 @@ const defaultOrigins = [
   'http://127.0.0.1:3000',
   'http://127.0.0.1:5173',
   'https://goroomz.in',
-  'https://www.goroomz.in'
+  'https://www.goroomz.in',
+  'https://admin.goroomz.in'
 ];
 
 const envOrigins = process.env.FRONTEND_URLS
@@ -97,6 +99,68 @@ app.use('/uploads', (req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   next();
 }, express.static(require('path').join(__dirname, 'uploads')));
+
+// Dynamic sitemap.xml (must be before route mounts)
+app.get('/api/sitemap.xml', async (req, res) => {
+  try {
+    const { Property, Category, sequelize: seq } = require('./models');
+    const baseUrl = 'https://goroomz.in';
+
+    const staticPages = [
+      { url: '/', priority: '1.0', changefreq: 'daily' },
+      { url: '/pgs', priority: '0.9', changefreq: 'daily' },
+      { url: '/search', priority: '0.8', changefreq: 'daily' },
+      { url: '/about', priority: '0.5', changefreq: 'monthly' },
+      { url: '/privacy', priority: '0.3', changefreq: 'yearly' },
+      { url: '/terms', priority: '0.3', changefreq: 'yearly' },
+    ];
+
+    const categories = await Category.findAll({ where: { isActive: true } }).catch(() => []);
+    const categoryPages = categories.map(cat => ({
+      url: `/category/${encodeURIComponent(cat.name)}`,
+      priority: '0.8',
+      changefreq: 'daily'
+    }));
+
+    const { sequelize } = require('./models');
+    const [properties] = await sequelize.query(`
+      SELECT id, slug, type, updated_at FROM properties 
+      WHERE is_active = true AND approval_status = 'approved'
+      ORDER BY updated_at DESC LIMIT 5000
+    `);
+
+    const propertyPages = properties.map(p => {
+      const path = p.type === 'pg' && p.slug ? `/pg/${p.slug}` : `/property/${p.id}`;
+      return {
+        url: path,
+        priority: '0.7',
+        changefreq: 'weekly',
+        lastmod: p.updated_at ? new Date(p.updated_at).toISOString().split('T')[0] : undefined
+      };
+    });
+
+    const allPages = [...staticPages, ...categoryPages, ...propertyPages];
+
+    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
+    for (const page of allPages) {
+      xml += '  <url>\n';
+      xml += `    <loc>${baseUrl}${page.url}</loc>\n`;
+      if (page.lastmod) xml += `    <lastmod>${page.lastmod}</lastmod>\n`;
+      xml += `    <changefreq>${page.changefreq}</changefreq>\n`;
+      xml += `    <priority>${page.priority}</priority>\n`;
+      xml += '  </url>\n';
+    }
+    xml += '</urlset>';
+
+    res.set('Content-Type', 'application/xml');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(xml);
+  } catch (error) {
+    console.error('Sitemap generation error:', error);
+    res.status(500).send('Error generating sitemap');
+  }
+});
 
 // Database connection and sync
 const initializeDatabase = async () => {
@@ -185,6 +249,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/properties', propertyRoutes);
+app.use('/api/enquiries', enquiryRoutes);
 app.use('/api', internalRoutes);
 app.use('/api', leadRoutes);
 app.use('/api/communications', communicationRoutes);

@@ -13,6 +13,39 @@ const { getPermissionsForRole } = require('../utils/authMiddleware');
 
 const router = express.Router();
 
+// @desc    Get available roles
+// @route   GET /api/internal/roles
+// @access  Private
+router.get('/internal/roles', async (req, res) => {
+  const roles = [
+    { id: 'agent', name: 'Agent', description: 'Field agent for property onboarding' },
+    { id: 'regional_manager', name: 'Regional Manager', description: 'Manages agents in a region' },
+    { id: 'operations_manager', name: 'Operations Manager', description: 'Oversees daily operations' },
+    { id: 'platform_admin', name: 'Platform Admin', description: 'Full platform administration' },
+    { id: 'superuser', name: 'Superuser', description: 'Full system access' },
+    { id: 'owner', name: 'Property Owner', description: 'Property owner account' },
+    { id: 'category_owner', name: 'Category Owner', description: 'Category-level property owner' },
+    { id: 'admin', name: 'Admin', description: 'System administrator' },
+  ];
+  res.json({ success: true, data: roles });
+});
+
+// @desc    Get territories
+// @route   GET /api/internal/territories
+// @access  Private
+router.get('/internal/territories', async (req, res) => {
+  try {
+    const { sequelize } = require('../../models');
+    const [territories] = await sequelize.query(
+      'SELECT * FROM territories WHERE is_active = true ORDER BY name'
+    );
+    res.json({ success: true, data: territories || [] });
+  } catch (error) {
+    // If territories table doesn't exist, return empty
+    res.json({ success: true, data: [] });
+  }
+});
+
 // @desc    Get internal users with filtering
 // @route   GET /api/internal/users
 // @access  Private
@@ -61,8 +94,8 @@ router.get('/internal/users', async (req, res) => {
       where: whereClause,
       limit: parseInt(limit),
       offset,
-      order: [['createdAt', 'DESC']],
-      attributes: ['id', 'name', 'email', 'phone', 'role', 'isActive', 'createdAt', 'updatedAt']
+      order: [['created_at', 'DESC']],
+      attributes: ['id', 'name', 'email', 'phone', 'role', 'is_active', 'created_at', 'updated_at']
     });
 
     // Map users to internal user format
@@ -73,9 +106,9 @@ router.get('/internal/users', async (req, res) => {
       phone: user.phone || '',
       internalRole: user.role,
       internalPermissions: getPermissionsForRole(user.role),
-      isActive: user.isActive !== false,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt
+      isActive: user.is_active !== false,
+      createdAt: user.created_at,
+      updatedAt: user.updated_at
     }));
 
     res.json({
@@ -141,7 +174,7 @@ router.post('/internal/users', async (req, res) => {
           internalRole: user.role,
           internalPermissions: getPermissionsForRole(user.role),
           isActive: true,
-          createdAt: user.createdAt
+          createdAt: user.created_at
         },
         tempPassword
       }
@@ -167,7 +200,7 @@ router.get('/internal/users/:id', async (req, res) => {
     jwt.verify(token, process.env.JWT_SECRET);
 
     const user = await User.findByPk(req.params.id, {
-      attributes: ['id', 'name', 'email', 'phone', 'role', 'isActive', 'createdAt', 'updatedAt']
+      attributes: ['id', 'name', 'email', 'phone', 'role', 'is_active', 'created_at', 'updated_at']
     });
 
     if (!user) {
@@ -183,9 +216,9 @@ router.get('/internal/users/:id', async (req, res) => {
         phone: user.phone || '',
         internalRole: user.role,
         internalPermissions: getPermissionsForRole(user.role),
-        isActive: user.isActive !== false,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt
+        isActive: user.is_active !== false,
+        createdAt: user.created_at,
+        updatedAt: user.updated_at
       }
     });
 
@@ -224,7 +257,7 @@ router.put('/internal/users/:id', async (req, res) => {
     if (email) user.email = email.toLowerCase();
     if (phone !== undefined) user.phone = phone;
     if (internalRole) user.role = internalRole;
-    if (isActive !== undefined) user.isActive = isActive;
+    if (isActive !== undefined) user.is_active = isActive;
 
     await user.save();
 
@@ -237,8 +270,8 @@ router.put('/internal/users/:id', async (req, res) => {
         phone: user.phone,
         internalRole: user.role,
         internalPermissions: getPermissionsForRole(user.role),
-        isActive: user.isActive,
-        updatedAt: user.updatedAt
+        isActive: user.is_active,
+        updatedAt: user.updated_at
       }
     });
 
@@ -272,7 +305,7 @@ router.delete('/internal/users/:id', async (req, res) => {
     }
 
     // Soft delete - just deactivate
-    user.isActive = false;
+    user.is_active = false;
     await user.save();
 
     res.json({ success: true, message: 'User deactivated successfully' });
@@ -405,4 +438,100 @@ router.get('/internal/superuser/users/owners', async (req, res) => {
   }
 });
 
+// @desc    Reset user password
+// @route   POST /api/internal/users/:id/reset-password
+// @access  Private (admin/superuser only)
+router.post('/internal/users/:id/reset-password', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const currentUser = await User.findByPk(decoded.id);
+
+    if (!currentUser || !['admin', 'superuser', 'platform_admin'].includes(currentUser.role)) {
+      return res.status(403).json({ success: false, message: 'Not authorized to reset passwords' });
+    }
+
+    const user = await User.findByPk(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Generate new temporary password
+    const tempPassword = Math.random().toString(36).slice(-8) + Math.random().toString(36).slice(-4).toUpperCase() + '!';
+
+    user.password = tempPassword; // Will be hashed by model hook
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully',
+      data: {
+        userId: user.id,
+        email: user.email,
+        tempPassword
+      }
+    });
+
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ success: false, message: 'Error resetting password' });
+  }
+});
+
+// @desc    Change user email
+// @route   PUT /api/internal/users/:id/email
+// @access  Private (admin/superuser only)
+router.put('/internal/users/:id/email', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const currentUser = await User.findByPk(decoded.id);
+
+    if (!currentUser || !['admin', 'superuser', 'platform_admin'].includes(currentUser.role)) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    const { newEmail } = req.body;
+    if (!newEmail) {
+      return res.status(400).json({ success: false, message: 'New email is required' });
+    }
+
+    // Check if email already taken
+    const existing = await User.findOne({ where: { email: newEmail.toLowerCase() } });
+    if (existing && existing.id !== req.params.id) {
+      return res.status(400).json({ success: false, message: 'Email already in use by another account' });
+    }
+
+    const user = await User.findByPk(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const oldEmail = user.email;
+    user.email = newEmail.toLowerCase();
+    await user.save();
+
+    res.json({
+      success: true,
+      message: `Email changed from ${oldEmail} to ${user.email}`,
+      data: { id: user.id, email: user.email }
+    });
+
+  } catch (error) {
+    console.error('Change email error:', error);
+    res.status(500).json({ success: false, message: 'Error changing email' });
+  }
+});
+
 module.exports = router;
+

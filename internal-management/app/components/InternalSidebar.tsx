@@ -201,6 +201,12 @@ export default function InternalSidebar({ isOpen, onClose }: InternalSidebarProp
       badge: 'pendingClaims'
     },
     { 
+      name: 'Enquiries', 
+      path: '/enquiries', 
+      icon: '📩',
+      roles: ['operations_manager', 'platform_admin', 'superuser']
+    },
+    { 
       name: 'Agents', 
       path: '/platform/agents', 
       icon: '👔',
@@ -211,6 +217,12 @@ export default function InternalSidebar({ isOpen, onClose }: InternalSidebarProp
   // Property Management items (non-platform routes)
   const propertyItems: MenuItem[] = [
     { 
+      name: 'Properties', 
+      path: '/properties', 
+      icon: '🏠',
+      roles: ['agent', 'regional_manager', 'operations_manager', 'platform_admin', 'superuser']
+    },
+    { 
       name: 'Bookings', 
       path: '/bookings', 
       icon: '📅',
@@ -219,8 +231,14 @@ export default function InternalSidebar({ isOpen, onClose }: InternalSidebarProp
     { 
       name: 'Rooms', 
       path: '/rooms', 
-      icon: '🏠',
+      icon: '🛏️',
       roles: ['agent', 'regional_manager', 'operations_manager', 'platform_admin', 'superuser']
+    },
+    { 
+      name: 'Categories', 
+      path: '/categories', 
+      icon: '📂',
+      roles: ['platform_admin', 'superuser']
     },
     { 
       name: 'Check-In', 
@@ -241,6 +259,12 @@ export default function InternalSidebar({ isOpen, onClose }: InternalSidebarProp
       roles: ['agent', 'regional_manager', 'operations_manager', 'platform_admin', 'superuser']
     },
     { 
+      name: 'Maintenance', 
+      path: '/maintenance', 
+      icon: '🔧',
+      roles: ['operations_manager', 'platform_admin', 'superuser']
+    },
+    { 
       name: 'Property Onboarding', 
       path: '/property-onboarding', 
       icon: '🏢',
@@ -257,6 +281,50 @@ export default function InternalSidebar({ isOpen, onClose }: InternalSidebarProp
       path: '/property-documents', 
       icon: '📄',
       roles: ['agent', 'regional_manager', 'operations_manager', 'platform_admin', 'superuser']
+    },
+  ];
+
+  // Financial items
+  const financialItems: MenuItem[] = [
+    { 
+      name: 'Payments', 
+      path: '/payments', 
+      icon: '💰',
+      roles: ['agent', 'regional_manager', 'operations_manager', 'platform_admin', 'superuser']
+    },
+    { 
+      name: 'Payment Schedule', 
+      path: '/payment-schedule', 
+      icon: '📆',
+      roles: ['regional_manager', 'operations_manager', 'platform_admin', 'superuser']
+    },
+    { 
+      name: 'Deposits', 
+      path: '/deposits', 
+      icon: '🏦',
+      roles: ['regional_manager', 'operations_manager', 'platform_admin', 'superuser']
+    },
+    { 
+      name: 'Reports', 
+      path: '/reports', 
+      icon: '📊',
+      roles: ['regional_manager', 'operations_manager', 'platform_admin', 'superuser']
+    },
+  ];
+
+  // Staff & Owners items
+  const staffItems: MenuItem[] = [
+    { 
+      name: 'Staff', 
+      path: '/staff', 
+      icon: '👷',
+      roles: ['operations_manager', 'platform_admin', 'superuser']
+    },
+    { 
+      name: 'Property Owners', 
+      path: '/property-owners', 
+      icon: '🏛️',
+      roles: ['operations_manager', 'platform_admin', 'superuser']
     },
   ];
 
@@ -326,7 +394,7 @@ export default function InternalSidebar({ isOpen, onClose }: InternalSidebarProp
     // grant access to general items based on their role level
     if (user?.role) {
       // Superusers can see everything
-      if (user.role === 'superuser') {
+      if ((user.role as string) === 'superuser') {
         return true;
       }
       
@@ -341,7 +409,7 @@ export default function InternalSidebar({ isOpen, onClose }: InternalSidebarProp
           '/dashboard', '/my-profile', '/notifications', '/notification-preferences',
           '/bookings', '/rooms', '/check-in', '/check-out', '/housekeeping',
           '/maintenance', '/payments', '/deposits', '/property-documents',
-          '/properties', '/property-overview'
+          '/properties', '/property-overview', '/enquiries'
         ];
         return ownerPaths.includes(item.path) || 
                item.roles.includes('agent') ||
@@ -361,6 +429,8 @@ export default function InternalSidebar({ isOpen, onClose }: InternalSidebarProp
   const filteredOperations = operationsItems.filter(hasPermission);
   const filteredPlatform = platformItems.filter(hasPermission);
   const filteredProperty = propertyItems.filter(hasPermission);
+  const filteredFinancial = financialItems.filter(hasPermission);
+  const filteredStaff = staffItems.filter(hasPermission);
   const filteredAdmin = adminItems.filter(hasPermission);
   const filteredProfile = profileItems.filter(hasPermission);
 
@@ -492,11 +562,13 @@ export default function InternalSidebar({ isOpen, onClose }: InternalSidebarProp
           {/* Property Owner Quick Access - shown only for owners */}
           {user?.role === 'owner' && !user?.internalRole && renderMenuSection('My Property', [
             { name: 'Overview', path: '/dashboard', icon: '📊', roles: ['agent'] },
+            { name: 'Enquiries', path: '/enquiries', icon: '📩', roles: ['agent'] },
             { name: 'Bookings', path: '/bookings', icon: '📅', roles: ['agent'] },
-            { name: 'Rooms', path: '/rooms', icon: '🏠', roles: ['agent'] },
+            { name: 'Rooms', path: '/rooms', icon: '🛏️', roles: ['agent'] },
             { name: 'Check-In', path: '/check-in', icon: '🔑', roles: ['agent'] },
             { name: 'Check-Out', path: '/check-out', icon: '🚪', roles: ['agent'] },
             { name: 'Payments', path: '/payments', icon: '💰', roles: ['agent'] },
+            { name: 'Deposits', path: '/deposits', icon: '🏦', roles: ['agent'] },
             { name: 'Housekeeping', path: '/housekeeping', icon: '🧹', roles: ['agent'] },
             { name: 'Maintenance', path: '/maintenance', icon: '🔧', roles: ['agent'] },
             { name: 'Documents', path: '/property-documents', icon: '📄', roles: ['agent'] },
@@ -529,6 +601,12 @@ export default function InternalSidebar({ isOpen, onClose }: InternalSidebarProp
 
           {/* Property Management Section */}
           {renderMenuSection('Property Management', filteredProperty)}
+
+          {/* Financial Section */}
+          {renderMenuSection('Financial', filteredFinancial)}
+
+          {/* Staff & Owners Section */}
+          {renderMenuSection('Staff & Owners', filteredStaff)}
 
           {/* Administration Section */}
           {filteredAdmin.length > 0 && (

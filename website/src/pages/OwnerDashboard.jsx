@@ -45,6 +45,7 @@ const OwnerDashboard = () => {
   const [properties, setProperties] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [leads, setLeads] = useState([]);
+  const [enquiries, setEnquiries] = useState([]);
   const [stats, setStats] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
@@ -55,6 +56,7 @@ const OwnerDashboard = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [bookingStatusFilter, setBookingStatusFilter] = useState('all');
   const [leadStatusFilter, setLeadStatusFilter] = useState('all');
+  const [enquiryStatusFilter, setEnquiryStatusFilter] = useState('all');
   const [trackingReference, setTrackingReference] = useState('');
 
   // Load owner data
@@ -68,10 +70,11 @@ const OwnerDashboard = () => {
       
       const userEmail = localStorage.getItem('userEmail') || apiService.getCurrentUser()?.email;
       
-      const [propertiesRes, bookingsRes, leadsRes] = await Promise.all([
+      const [propertiesRes, bookingsRes, leadsRes, enquiriesRes] = await Promise.all([
         apiService.get('/internal/properties'), // Get owner's properties from properties table
         apiService.get('/bookings/owner/my-bookings'),
-        userEmail ? leadService.getPropertyOwnerLeads(userEmail).catch(() => ({ success: false, data: { leads: [] } })) : Promise.resolve({ success: false, data: { leads: [] } })
+        userEmail ? leadService.getPropertyOwnerLeads(userEmail).catch(() => ({ success: false, data: { leads: [] } })) : Promise.resolve({ success: false, data: { leads: [] } }),
+        apiService.get('/enquiries/my').catch(() => ({ success: false, data: [] }))
       ]);
 
       if (propertiesRes.success) {
@@ -111,6 +114,10 @@ const OwnerDashboard = () => {
       if (leadsRes.success) {
         setLeads(leadsRes.data.leads || []);
       }
+
+      if (enquiriesRes.success) {
+        setEnquiries(enquiriesRes.data || []);
+      }
     } catch (error) {
       console.error('Error loading owner data:', error);
       toast({
@@ -146,7 +153,7 @@ const OwnerDashboard = () => {
 
   const handleUpdateProperty = async (propertyId, updates) => {
     try {
-      const response = await apiService.put(`/rooms/${propertyId}`, updates);
+      const response = await apiService.put(`/properties/${propertyId}`, updates);
       if (response.success) {
         setIsEditModalOpen(false);
         toast({ title: "Property Updated! ✨" });
@@ -155,7 +162,7 @@ const OwnerDashboard = () => {
     } catch (error) {
       toast({
         title: "Update Failed",
-        description: "Failed to update property.",
+        description: error.message || "Failed to update property.",
         variant: "destructive"
       });
     }
@@ -164,7 +171,7 @@ const OwnerDashboard = () => {
   const handleDeleteProperty = async (propertyId) => {
     if (window.confirm('Are you sure you want to delete this property?')) {
       try {
-        const response = await apiService.delete(`/rooms/${propertyId}`);
+        const response = await apiService.delete(`/properties/${propertyId}`);
         if (response.success) {
           setProperties(properties.filter(p => p.id !== propertyId));
           toast({ title: "Property Deleted! 🗑️" });
@@ -223,6 +230,43 @@ const OwnerDashboard = () => {
       });
     }
   };
+
+  // Enquiry management
+  const handleUpdateEnquiryStatus = async (enquiryId, newStatus) => {
+    try {
+      const response = await apiService.put(`/enquiries/${enquiryId}/status`, { status: newStatus });
+      if (response.success) {
+        setEnquiries(enquiries.map(e => 
+          e.id === enquiryId ? { ...e, status: newStatus } : e
+        ));
+        toast({ 
+          title: "Enquiry Updated! ✅",
+          description: `Enquiry status changed to ${newStatus}`
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Update Failed",
+        description: "Failed to update enquiry status.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const getEnquiryStatusBadge = (status) => {
+    switch (status) {
+      case 'new': return 'bg-blue-100 text-blue-700';
+      case 'contacted': return 'bg-yellow-100 text-yellow-700';
+      case 'visited': return 'bg-green-100 text-green-700';
+      case 'converted': return 'bg-purple-100 text-purple-700';
+      case 'closed': return 'bg-gray-100 text-gray-700';
+      default: return 'bg-gray-100 text-gray-700';
+    }
+  };
+
+  const filteredEnquiries = enquiries.filter(enquiry => {
+    return enquiryStatusFilter === 'all' || enquiry.status === enquiryStatusFilter;
+  });
 
   // Filtered data
   const filteredProperties = properties.filter(property => {
@@ -473,6 +517,16 @@ const OwnerDashboard = () => {
             }`}
           >
             📅 Bookings ({bookings.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('enquiries')}
+            className={`flex-1 min-w-fit py-3 px-4 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'enquiries' 
+                ? 'bg-white text-purple-600 shadow-sm' 
+                : 'text-gray-600 hover:text-purple-600'
+            }`}
+          >
+            💬 Enquiries ({enquiries.length})
           </button>
           <button
             onClick={() => setActiveTab('leads')}
@@ -853,6 +907,129 @@ const OwnerDashboard = () => {
                     {bookingStatusFilter !== 'all' 
                       ? `No ${bookingStatusFilter} bookings found.` 
                       : 'No bookings yet.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Enquiries Tab */}
+        {activeTab === 'enquiries' && (
+          <div className="bg-white rounded-2xl p-6 shadow-sm border">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold">Property Enquiries</h2>
+              <select
+                value={enquiryStatusFilter}
+                onChange={(e) => setEnquiryStatusFilter(e.target.value)}
+                className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+              >
+                <option value="all">All Enquiries</option>
+                <option value="new">New</option>
+                <option value="contacted">Contacted</option>
+                <option value="visited">Visited</option>
+                <option value="converted">Converted</option>
+                <option value="closed">Closed</option>
+              </select>
+            </div>
+
+            <div className="space-y-4">
+              {filteredEnquiries.map(enquiry => (
+                <div key={enquiry.id} className="p-4 border border-gray-200 rounded-lg hover:border-purple-200 transition-colors">
+                  <div className="flex flex-col md:flex-row justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <h3 className="font-bold text-lg">{enquiry.name}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            {enquiry.property?.name || 'Property'}
+                          </p>
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium capitalize ${getEnquiryStatusBadge(enquiry.status)}`}>
+                          {enquiry.status}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Phone className="w-4 h-4 text-gray-400" />
+                          <a href={`tel:${enquiry.phone}`} className="text-purple-600 hover:underline">{enquiry.phone}</a>
+                        </div>
+                        {enquiry.email && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Mail className="w-4 h-4 text-gray-400" />
+                            <a href={`mailto:${enquiry.email}`} className="text-purple-600 hover:underline">{enquiry.email}</a>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 text-sm">
+                          <Clock className="w-4 h-4 text-gray-400" />
+                          <span>{new Date(enquiry.createdAt).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                        </div>
+                      </div>
+
+                      {enquiry.message && (
+                        <p className="text-sm text-gray-600 bg-gray-50 rounded-lg p-3 mb-3">
+                          💬 {enquiry.message}
+                        </p>
+                      )}
+
+                      {enquiry.preferredDate && (
+                        <p className="text-sm text-gray-600 mb-3">
+                          📅 Preferred visit: {new Date(enquiry.preferredDate).toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' })}
+                        </p>
+                      )}
+
+                      {/* Action Buttons */}
+                      <div className="flex flex-wrap gap-2">
+                        {enquiry.status === 'new' && (
+                          <Button
+                            size="sm"
+                            className="bg-yellow-500 hover:bg-yellow-600 text-white"
+                            onClick={() => handleUpdateEnquiryStatus(enquiry.id, 'contacted')}
+                          >
+                            <Phone className="w-3 h-3 mr-1" /> Mark Contacted
+                          </Button>
+                        )}
+                        {(enquiry.status === 'new' || enquiry.status === 'contacted') && (
+                          <Button
+                            size="sm"
+                            className="bg-green-500 hover:bg-green-600 text-white"
+                            onClick={() => handleUpdateEnquiryStatus(enquiry.id, 'visited')}
+                          >
+                            <CheckCircle className="w-3 h-3 mr-1" /> Mark Visited
+                          </Button>
+                        )}
+                        {enquiry.status === 'visited' && (
+                          <Button
+                            size="sm"
+                            className="bg-purple-500 hover:bg-purple-600 text-white"
+                            onClick={() => handleUpdateEnquiryStatus(enquiry.id, 'converted')}
+                          >
+                            <Star className="w-3 h-3 mr-1" /> Mark Converted
+                          </Button>
+                        )}
+                        {enquiry.status !== 'closed' && enquiry.status !== 'converted' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleUpdateEnquiryStatus(enquiry.id, 'closed')}
+                          >
+                            <XCircle className="w-3 h-3 mr-1" /> Close
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {filteredEnquiries.length === 0 && (
+                <div className="text-center py-12">
+                  <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-muted-foreground">
+                    {enquiryStatusFilter !== 'all' 
+                      ? `No ${enquiryStatusFilter} enquiries found.` 
+                      : 'No enquiries yet. They will appear here when visitors submit interest in your properties.'}
                   </p>
                 </div>
               )}

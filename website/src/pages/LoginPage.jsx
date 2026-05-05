@@ -142,14 +142,11 @@ const LoginPage = () => {
             </Link>
           </p>
           
-          <div className="mt-8 p-4 bg-blue-50 rounded-lg">
-            <h3 className="font-semibold text-blue-900 mb-2">Demo Accounts:</h3>
-            <div className="text-sm text-blue-800 space-y-1">
-              <p><strong>Admin:</strong> admin@goroomz.com / admin123</p>
-              <p><strong>Owner:</strong> owner@goroomz.com / owner123</p>
-              <p><strong>User:</strong> user@goroomz.com / user123</p>
-            </div>
-          </div>
+          <p className="text-center text-sm text-muted-foreground mt-2">
+            <Link to="/forgot-password" className="font-semibold text-primary hover:underline">
+              Forgot Password?
+            </Link>
+          </p>
         </motion.div>
       </div>
     </>

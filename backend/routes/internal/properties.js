@@ -299,12 +299,14 @@ router.get('/internal/properties/:id', async (req, res) => {
         ownerPhone: property.owner_phone,
         location: {
           address: location.address || '',
+          area: location.area || '',
           city: location.city || '',
           state: location.state || '',
           country: location.country || 'India',
           pincode: location.pincode || '',
-          latitude: location.latitude || null,
-          longitude: location.longitude || null
+          landmark: location.landmark || '',
+          latitude: location.latitude || location.coordinates?.latitude || null,
+          longitude: location.longitude || location.coordinates?.longitude || null
         },
         contactInfo: {
           phone: contactInfo.phone || property.owner_phone || '',
@@ -592,6 +594,20 @@ router.post('/internal/properties/:id/upload-images', propertyImageUpload.array(
       isPrimary: index === 0 && req.body.setFirstAsPrimary === 'true'
     }));
 
+    // Also update the property's images array in the database
+    const propertyId = req.params.id;
+    try {
+      const property = await Property.findByPk(propertyId);
+      if (property) {
+        const existingImages = property.images || [];
+        const updatedImages = [...existingImages, ...uploadedImages];
+        await property.update({ images: updatedImages });
+      }
+    } catch (dbErr) {
+      console.warn('Failed to update property images in DB:', dbErr.message);
+      // Files are uploaded, just DB update failed - not critical
+    }
+
     res.json({
       success: true,
       message: `${uploadedImages.length} image(s) uploaded successfully`,
@@ -733,17 +749,20 @@ router.post('/internal/properties/direct', async (req, res) => {
         }
       }
 
-      // Validate that we have an owner
-      if (!ownerId) {
+      // If no owner specified, allow creating without owner (unclaimed property)
+      if (!ownerId && !createNewOwner) {
+        // Create property without owner - it can be claimed later
+        ownerId = null;
+      } else if (!ownerId && createNewOwner) {
         await transaction.rollback();
         return res.status(400).json({
           success: false,
-          message: 'Property owner is required. Either select an existing owner or create a new one.'
+          message: 'Owner name and email are required when creating a new owner.'
         });
       }
 
       // Strip 'owner_' prefix if present
-      const cleanOwnerId = ownerId.replace(/^owner_/, '');
+      const cleanOwnerId = ownerId ? ownerId.replace(/^owner_/, '') : null;
 
       // Create the property directly with approved status
       // Normalize type to lowercase to match DB enum ('pg', 'hostel', 'hotel', 'apartment')
@@ -754,7 +773,7 @@ router.post('/internal/properties/direct', async (req, res) => {
         name,
         description: description || null,
         type: normalizedType,
-        ownerId: cleanOwnerId,
+        ownerId: cleanOwnerId || null,
         location: location || {},
         contactInfo: contactInfo || {},
         amenities: amenities || [],
@@ -774,7 +793,8 @@ router.post('/internal/properties/direct', async (req, res) => {
           createdBy: user.id,
           createdByName: user.name,
           createdByRole: user.role,
-          bypassedLeadWorkflow: true
+          bypassedLeadWorkflow: true,
+          ...(cleanOwnerId ? {} : { unclaimed: true })
         }
       }, { transaction });
 
@@ -872,12 +892,41 @@ router.get('/internal/platform/properties', async (req, res) => {
       });
     }
 
-    // Get pagination parameters
+    // Get pagination and search parameters
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 1000;
     const offset = (page - 1) * limit;
+    const search = req.query.search ? req.query.search.trim() : '';
+    const statusFilter = req.query.status || '';
+    const categoryFilter = req.query.category || '';
 
     try {
+      // Build WHERE clause for search and filters
+      let whereClause = '';
+      const queryParams = [];
+      const conditions = [];
+
+      if (search) {
+        queryParams.push(`%${search}%`);
+        const paramIdx = queryParams.length;
+        conditions.push(`(p.name ILIKE $${paramIdx} OR p.description ILIKE $${paramIdx} OR p.location->>'address' ILIKE $${paramIdx} OR p.location->>'area' ILIKE $${paramIdx} OR p.location->>'city' ILIKE $${paramIdx} OR u.name ILIKE $${paramIdx} OR u.email ILIKE $${paramIdx})`);
+      }
+
+      if (statusFilter === 'active') {
+        conditions.push(`p.is_active = true`);
+      } else if (statusFilter === 'inactive') {
+        conditions.push(`p.is_active = false`);
+      }
+
+      if (categoryFilter) {
+        queryParams.push(categoryFilter);
+        conditions.push(`p.type = $${queryParams.length}`);
+      }
+
+      if (conditions.length > 0) {
+        whereClause = 'WHERE ' + conditions.join(' AND ');
+      }
+
       // Get all properties with actual room counts from the rooms table
       const [properties] = await sequelize.query(`
         SELECT p.*, 
@@ -897,11 +946,17 @@ router.get('/internal/platform/properties', async (req, res) => {
           AND property_details->>'propertyId' IS NOT NULL
           GROUP BY property_details->>'propertyId'
         ) r ON r.property_id = p.id::text
+        ${whereClause}
         ORDER BY p.created_at DESC 
         LIMIT ${limit} OFFSET ${offset}
-      `);
+      `, {
+        bind: queryParams
+      });
 
-      const [countResult] = await sequelize.query('SELECT COUNT(*) as count FROM properties');
+      const [countResult] = await sequelize.query(
+        `SELECT COUNT(*) as count FROM properties p LEFT JOIN users u ON p.owner_id = u.id ${whereClause}`,
+        { bind: queryParams }
+      );
       const totalProperties = parseInt(countResult[0].count);
 
       // Convert properties to platform format
@@ -1106,6 +1161,57 @@ router.get('/internal/platform/properties/:id', async (req, res) => {
   }
 });
 
+// @desc    Update property details (superuser/admin)
+// @route   PUT /api/internal/platform/properties/:id
+// @access  Private
+router.put('/internal/platform/properties/:id', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+    const token = authHeader.substring(7);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findByPk(decoded.id);
+    if (!user || !['admin', 'superuser', 'platform_admin'].includes(user.role)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const property = await Property.findByPk(req.params.id);
+    if (!property) {
+      return res.status(404).json({ success: false, message: 'Property not found' });
+    }
+
+    const updates = {};
+    const body = req.body;
+
+    if (body.name !== undefined) updates.name = body.name;
+    if (body.description !== undefined) updates.description = body.description;
+    if (body.type !== undefined) updates.type = body.type;
+    if (body.location !== undefined) updates.location = body.location;
+    if (body.contactInfo !== undefined) updates.contactInfo = body.contactInfo;
+    if (body.contact_info !== undefined) updates.contactInfo = body.contact_info;
+    if (body.amenities !== undefined) updates.amenities = body.amenities;
+    if (body.images !== undefined) updates.images = body.images;
+    if (body.rules !== undefined) updates.rules = body.rules;
+    if (body.is_active !== undefined) updates.isActive = body.is_active;
+    if (body.is_featured !== undefined) updates.isFeatured = body.is_featured;
+    if (body.approval_status !== undefined) updates.approvalStatus = body.approval_status;
+    if (body.total_floors !== undefined) updates.totalFloors = body.total_floors;
+    if (body.total_rooms !== undefined) updates.totalRooms = body.total_rooms;
+    if (body.check_in_time !== undefined) updates.checkInTime = body.check_in_time;
+    if (body.check_out_time !== undefined) updates.checkOutTime = body.check_out_time;
+    if (body.metadata !== undefined) updates.metadata = body.metadata;
+
+    await property.update(updates);
+
+    res.json({ success: true, message: 'Property updated', data: property });
+  } catch (error) {
+    console.error('Error updating property:', error);
+    res.status(500).json({ success: false, message: 'Failed to update property' });
+  }
+});
+
 // @desc    Change property owner (transfer ownership)
 // @route   PUT /api/internal/platform/properties/:id/owner
 // @access  Private
@@ -1279,12 +1385,17 @@ router.get('/internal/superuser/property-owners', async (req, res) => {
       const { sequelize } = require('../../models');
       const { Op } = require('sequelize');
 
-      // 1. Get all leads grouped by email
-      const leads = await Lead.findAll({
-        attributes: ['id', 'property_owner_name', 'email', 'phone', 'business_name',
-          'property_type', 'estimated_rooms', 'city', 'state', 'status', 'created_at'],
-        order: [['created_at', 'DESC']]
-      });
+      // 1. Get all leads grouped by email (may fail if leads table schema is outdated)
+      let leads = [];
+      try {
+        leads = await Lead.findAll({
+          attributes: ['id', 'property_owner_name', 'email', 'phone', 'business_name',
+            'property_type', 'estimated_rooms', 'city', 'state', 'status', 'created_at'],
+          order: [['created_at', 'DESC']]
+        });
+      } catch (leadErr) {
+        console.warn('Leads query failed (schema mismatch), skipping leads:', leadErr.message);
+      }
 
       // 2. Get property counts per owner from properties table
       const [propCounts] = await sequelize.query(`
@@ -1623,6 +1734,98 @@ router.get('/internal/superuser/property-owners/:id', async (req, res) => {
       success: false,
       message: 'Error fetching property owner: ' + error.message
     });
+  }
+});
+
+// @desc    Activate property owner
+// @route   PUT /api/internal/superuser/property-owners/:id/activate
+// @access  Private (superuser, admin)
+router.put('/internal/superuser/property-owners/:id/activate', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+    const token = authHeader.substring(7);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const currentUser = await User.findByPk(decoded.id);
+    if (!currentUser || !['admin', 'superuser'].includes(currentUser.role)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const user = await User.findByPk(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    await user.update({ isActive: true, isVerified: true });
+    res.json({ success: true, message: 'Property owner activated successfully' });
+  } catch (error) {
+    console.error('Activate property owner error:', error);
+    res.status(500).json({ success: false, message: 'Error activating property owner' });
+  }
+});
+
+// @desc    Deactivate property owner
+// @route   PUT /api/internal/superuser/property-owners/:id/deactivate
+// @access  Private (superuser, admin)
+router.put('/internal/superuser/property-owners/:id/deactivate', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+    const token = authHeader.substring(7);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const currentUser = await User.findByPk(decoded.id);
+    if (!currentUser || !['admin', 'superuser'].includes(currentUser.role)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const user = await User.findByPk(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    await user.update({ isActive: false });
+    res.json({ success: true, message: 'Property owner deactivated successfully' });
+  } catch (error) {
+    console.error('Deactivate property owner error:', error);
+    res.status(500).json({ success: false, message: 'Error deactivating property owner' });
+  }
+});
+
+// @desc    Reset user password (superuser can set new password for any user)
+// @route   PUT /api/internal/superuser/property-owners/:id/reset-password
+// @access  Private (superuser, admin)
+router.put('/internal/superuser/property-owners/:id/reset-password', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+    const token = authHeader.substring(7);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const currentUser = await User.findByPk(decoded.id);
+    if (!currentUser || !['admin', 'superuser'].includes(currentUser.role)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+    }
+
+    const user = await User.findByPk(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    await user.update({ password: newPassword, isActive: true, isVerified: true });
+    res.json({ success: true, message: `Password reset successfully for ${user.email}` });
+  } catch (error) {
+    console.error('Reset password error:', error);
+    res.status(500).json({ success: false, message: 'Error resetting password' });
   }
 });
 

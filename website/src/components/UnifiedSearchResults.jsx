@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { AlertCircle, Building2, Globe } from 'lucide-react';
+import PropertyCard from './PropertyCard';
 import RoomCard from './RoomCard';
 import RoomGrid from './RoomGrid';
 
@@ -94,11 +95,20 @@ const UnifiedSearchResults = ({
 
       {/* Results Grid/List */}
       {results.length > 0 ? (
-        <RoomGrid 
-          rooms={results} 
-          viewMode={viewMode} 
-          onRoomClick={onPropertyClick}
-        />
+        <div className={viewMode === 'grid' 
+          ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+          : "space-y-4"
+        }>
+          {results.map((property, index) => (
+            <PropertyCard
+              key={property.id || index}
+              property={property}
+              index={index}
+              viewMode={viewMode}
+              onClick={() => onPropertyClick(property)}
+            />
+          ))}
+        </div>
       ) : (
         <div className="text-center py-16">
           <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">

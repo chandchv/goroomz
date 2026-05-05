@@ -3,6 +3,7 @@ import { MapPin, Star, DollarSign, Wifi, Car, Coffee, Globe, ExternalLink } from
 import { Button } from '@/components/ui/button';
 import PropertySourceBadge from './PropertySourceBadge';
 import propertyService from '@/services/propertyService';
+import { getImageUrl, PLACEHOLDER_IMAGE } from '@/utils/imageUtils';
 
 /**
  * EnhancedPropertyCard Component
@@ -36,12 +37,12 @@ const EnhancedPropertyCard = ({ property, onClick, viewMode = 'grid' }) => {
   // Get property image
   const getImage = () => {
     if (property.images && property.images.length > 0) {
-      return property.images[0];
+      return getImageUrl(property.images[0]) || PLACEHOLDER_IMAGE;
     }
     if (property.image) {
-      return property.image;
+      return getImageUrl(property.image) || PLACEHOLDER_IMAGE;
     }
-    return '/placeholder-property.jpg';
+    return PLACEHOLDER_IMAGE;
   };
 
   // Get property title

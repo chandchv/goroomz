@@ -455,6 +455,13 @@ const UserEditModal: React.FC<UserEditModalProps> = ({
         isActive: formData.isActive,
       };
 
+      // Include email if superuser changed it
+      const isSuperuser = user?.role === 'superuser' || user?.role === 'admin' || 
+                          user?.internalRole === 'superuser' || user?.internalRole === 'platform_admin';
+      if (isSuperuser && formData.email && formData.email !== originalData?.email) {
+        updateData.email = formData.email.trim().toLowerCase();
+      }
+
       // Add optional fields based on role
       if (formData.internalRole === 'agent' || formData.internalRole === 'regional_manager') {
         updateData.territoryId = formData.territoryId || null;
@@ -602,15 +609,32 @@ const UserEditModal: React.FC<UserEditModalProps> = ({
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Email Address
                       </label>
-                      <input
-                        type="email"
-                        value={formData.email}
-                        disabled
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed text-gray-900"
-                      />
-                      <p className="mt-1 text-xs text-gray-500">
-                        Email address cannot be changed for security reasons
-                      </p>
+                      {(user?.role === 'superuser' || user?.role === 'admin' || user?.internalRole === 'superuser' || user?.internalRole === 'platform_admin') ? (
+                        <>
+                          <input
+                            type="email"
+                            value={formData.email}
+                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900"
+                            placeholder="user@example.com"
+                          />
+                          <p className="mt-1 text-xs text-blue-500">
+                            Superuser: You can change this user's email address
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <input
+                            type="email"
+                            value={formData.email}
+                            disabled
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500 cursor-not-allowed text-gray-900"
+                          />
+                          <p className="mt-1 text-xs text-gray-500">
+                            Email address cannot be changed. Contact a superuser.
+                          </p>
+                        </>
+                      )}
                     </div>
 
                     <div>

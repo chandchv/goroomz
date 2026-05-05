@@ -4,6 +4,7 @@ import api from '../services/api';
 import BulkRoomCreationModal from '../components/BulkRoomCreationModal';
 import RoomEditModal from '../components/RoomEditModal';
 import { useRole } from '../hooks/useRole';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Room {
   id: string;
@@ -38,6 +39,7 @@ export default function PropertyDetailPage() {
   const { propertyId } = useParams();
   const navigate = useNavigate();
   const { hasAdminAccess, hasManagerAccess, isAgent } = useRole();
+  const { user } = useAuth();
   const [property, setProperty] = useState<Property | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,6 +50,14 @@ export default function PropertyDetailPage() {
   const [filterFloor, setFilterFloor] = useState<string>('');
   const [filterSharing, setFilterSharing] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
+  
+  // Property editing state
+  const [isEditingProperty, setIsEditingProperty] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+  const [saving, setSaving] = useState(false);
+  const [rawPropertyData, setRawPropertyData] = useState<any>(null);
+
+  const isSuperuser = (user?.role as string) === 'superuser' || user?.role === 'admin' || user?.internalRole === 'superuser' || user?.internalRole === 'platform_admin';
 
   // Check if user has permission to add rooms
   // Agents, Regional Managers, Operations Managers, Platform Admins, and Superusers can add rooms
@@ -73,6 +83,7 @@ export default function PropertyDetailPage() {
       }
 
       const propertyData = propertyResponse.data.data;
+      setRawPropertyData(propertyData);
       
       // Get rooms for this property
       const roomsData = propertyData.rooms || [];
@@ -137,6 +148,152 @@ export default function PropertyDetailPage() {
   const handleBulkRoomSuccess = () => {
     setShowBulkRoomModal(false);
     loadPropertyDetails();
+  };
+
+  const [uploadingImages, setUploadingImages] = useState(false);
+
+  const getImageUrl = (url: string) => {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    if (url.startsWith('/uploads/')) return `https://goroomz.in${url}`;
+    return url;
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const currentImages = editForm.images || [];
+    if (currentImages.length + files.length > 10) {
+      alert('Maximum 10 images allowed per property');
+      return;
+    }
+
+    setUploadingImages(true);
+    try {
+      const formData = new FormData();
+      Array.from(files).forEach(file => {
+        formData.append('images', file);
+      });
+
+      const response = await api.post(`/api/internal/properties/${propertyId}/upload-images`, formData, {
+        headers: { 'Content-Type': undefined }
+      } as any);
+
+      if (response.data.success) {
+        setEditForm((prev: any) => ({
+          ...prev,
+          images: [...(prev.images || []), ...response.data.data]
+        }));
+      }
+    } catch (err: any) {
+      alert('Failed to upload images: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setUploadingImages(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleImageDelete = (index: number) => {
+    setEditForm((prev: any) => ({
+      ...prev,
+      images: prev.images.filter((_: any, i: number) => i !== index)
+    }));
+  };
+
+  const startEditingProperty = () => {
+    if (!rawPropertyData) return;
+    setEditForm({
+      name: rawPropertyData.name || '',
+      description: rawPropertyData.description || '',
+      type: rawPropertyData.type || 'pg',
+      address: rawPropertyData.location?.address || '',
+      area: rawPropertyData.location?.area || '',
+      city: rawPropertyData.location?.city || '',
+      state: rawPropertyData.location?.state || '',
+      country: rawPropertyData.location?.country || 'India',
+      phone: rawPropertyData.contactInfo?.phone || rawPropertyData.contact_info?.phone || '',
+      email: rawPropertyData.contactInfo?.email || rawPropertyData.contact_info?.email || '',
+      amenities: (rawPropertyData.amenities || []).join(', '),
+      images: rawPropertyData.images || [],
+      isActive: rawPropertyData.isActive !== false && rawPropertyData.is_active !== false,
+      isFeatured: rawPropertyData.isFeatured || rawPropertyData.is_featured || false,
+    });
+    setIsEditingProperty(true);
+  };
+
+  const savePropertyEdits = async () => {
+    try {
+      setSaving(true);
+      const updateData = {
+        name: editForm.name,
+        description: editForm.description,
+        type: editForm.type,
+        location: {
+          ...(rawPropertyData.location || {}),
+          address: editForm.address,
+          area: editForm.area,
+          city: editForm.city,
+          state: editForm.state,
+          country: editForm.country,
+        },
+        contactInfo: { phone: editForm.phone, email: editForm.email },
+        amenities: editForm.amenities.split(',').map((a: string) => a.trim().toLowerCase()).filter(Boolean),
+        images: editForm.images || [],
+        is_active: editForm.isActive,
+        is_featured: editForm.isFeatured,
+      };
+
+      await api.put(`/api/internal/platform/properties/${propertyId}`, updateData);
+      setIsEditingProperty(false);
+      loadPropertyDetails();
+      alert('Property updated successfully!');
+    } catch (err: any) {
+      alert('Failed to save: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const togglePropertyStatus = async () => {
+    if (!rawPropertyData) return;
+    const newStatus = rawPropertyData.is_active === false ? true : false;
+    if (!confirm(`Are you sure you want to ${newStatus ? 'activate' : 'deactivate'} this property?`)) return;
+    try {
+      await api.put(`/api/internal/platform/properties/${propertyId}`, { is_active: newStatus });
+      loadPropertyDetails();
+    } catch (err: any) {
+      alert('Failed: ' + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const approveProperty = async () => {
+    if (!confirm('Approve this property? It will become visible on the public website.')) return;
+    try {
+      await api.put(`/api/internal/platform/properties/${propertyId}`, {
+        is_active: true,
+        approval_status: 'approved'
+      });
+      loadPropertyDetails();
+      alert('Property approved and activated!');
+    } catch (err: any) {
+      alert('Failed to approve: ' + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const rejectProperty = async () => {
+    const reason = prompt('Rejection reason:');
+    if (!reason) return;
+    try {
+      await api.put(`/api/internal/platform/properties/${propertyId}`, {
+        is_active: false,
+        approval_status: 'rejected'
+      });
+      loadPropertyDetails();
+      alert('Property rejected.');
+    } catch (err: any) {
+      alert('Failed to reject: ' + (err.response?.data?.message || err.message));
+    }
   };
 
   const handleEditRoom = (room: Room) => {
@@ -314,6 +471,205 @@ export default function PropertyDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Property Info / Edit Section (Superuser) */}
+      {isSuperuser && rawPropertyData && (
+        <div className="mb-6 bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="flex items-center justify-between px-6 py-3 bg-gray-50 border-b">
+            <h2 className="text-lg font-semibold text-gray-900">Property Information</h2>
+            <div className="flex gap-2">
+              {!isEditingProperty ? (
+                <>
+                  <button onClick={startEditingProperty} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700">
+                    ✏️ Edit Property
+                  </button>
+                  {rawPropertyData.approvalStatus === 'pending' && (
+                    <button onClick={approveProperty}
+                      className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700">
+                      ✅ Approve
+                    </button>
+                  )}
+                  {rawPropertyData.approvalStatus === 'pending' && (
+                    <button onClick={rejectProperty}
+                      className="px-3 py-1.5 text-sm bg-red-50 text-red-600 rounded hover:bg-red-100">
+                      ❌ Reject
+                    </button>
+                  )}
+                  <button onClick={togglePropertyStatus}
+                    className={`px-3 py-1.5 text-sm rounded ${rawPropertyData.is_active !== false ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}>
+                    {rawPropertyData.is_active !== false ? '⏸ Deactivate' : '▶ Activate'}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => setIsEditingProperty(false)} className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200">Cancel</button>
+                  <button onClick={savePropertyEdits} disabled={saving} className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50">
+                    {saving ? 'Saving...' : '💾 Save Changes'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="p-6">
+            {isEditingProperty ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Property Name</label>
+                  <input type="text" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                  <select value={editForm.type} onChange={e => setEditForm({...editForm, type: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900">
+                    <option value="pg">PG</option>
+                    <option value="hotel">Hotel</option>
+                    <option value="hostel">Hostel</option>
+                    <option value="apartment">Apartment</option>
+                  </select>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <textarea value={editForm.description} onChange={e => setEditForm({...editForm, description: e.target.value})}
+                    rows={3} className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                  <input type="text" value={editForm.address} onChange={e => setEditForm({...editForm, address: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Area</label>
+                  <input type="text" value={editForm.area} onChange={e => setEditForm({...editForm, area: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                  <input type="text" value={editForm.city} onChange={e => setEditForm({...editForm, city: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">State</label>
+                  <input type="text" value={editForm.state} onChange={e => setEditForm({...editForm, state: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                  <input type="text" value={editForm.phone} onChange={e => setEditForm({...editForm, phone: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input type="email" value={editForm.email} onChange={e => setEditForm({...editForm, email: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900" />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Amenities (comma-separated)</label>
+                  <input type="text" value={editForm.amenities} onChange={e => setEditForm({...editForm, amenities: e.target.value})}
+                    placeholder="wifi, ac, tv, parking, meals, laundry, security, cctv"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900" />
+                </div>
+                {/* Images Section */}
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Images ({(editForm.images || []).length}/10)</label>
+                  {(editForm.images || []).length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                      {editForm.images.map((img: any, idx: number) => (
+                        <div key={idx} className="relative group rounded-lg overflow-hidden border border-gray-200">
+                          <img
+                            src={getImageUrl(img.url)}
+                            alt={img.caption || `Image ${idx + 1}`}
+                            className="w-full h-24 object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleImageDelete(idx)}
+                            className="absolute top-1 right-1 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <label className={`px-4 py-2 text-sm rounded-lg cursor-pointer transition-colors ${uploadingImages ? 'bg-gray-300 text-gray-500' : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'}`}>
+                      {uploadingImages ? 'Uploading...' : '📷 Upload Images'}
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        onChange={handleImageUpload}
+                        disabled={uploadingImages || (editForm.images || []).length >= 10}
+                        className="hidden"
+                      />
+                    </label>
+                    <span className="text-xs text-gray-500">Max 5MB each. JPEG, PNG, GIF, WebP.</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={editForm.isActive} onChange={e => setEditForm({...editForm, isActive: e.target.checked})}
+                      className="w-4 h-4 rounded border-gray-300" />
+                    <span className="text-sm text-gray-700">Active</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={editForm.isFeatured} onChange={e => setEditForm({...editForm, isFeatured: e.target.checked})}
+                      className="w-4 h-4 rounded border-gray-300" />
+                    <span className="text-sm text-gray-700">Featured</span>
+                  </label>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
+                <div><span className="text-gray-500">Name:</span> <span className="font-medium text-gray-900">{rawPropertyData.name}</span></div>
+                <div><span className="text-gray-500">Type:</span> <span className="font-medium text-gray-900 uppercase">{rawPropertyData.type}</span></div>
+                <div><span className="text-gray-500">Status:</span> <span className={`font-medium ${rawPropertyData.is_active !== false ? 'text-green-600' : 'text-red-600'}`}>{rawPropertyData.is_active !== false ? 'Active' : 'Inactive'}</span></div>
+                <div><span className="text-gray-500">Approval:</span> <span className={`font-medium ${rawPropertyData.approvalStatus === 'approved' ? 'text-green-600' : rawPropertyData.approvalStatus === 'rejected' ? 'text-red-600' : 'text-yellow-600'}`}>{rawPropertyData.approvalStatus === 'approved' ? '✅ Approved' : rawPropertyData.approvalStatus === 'rejected' ? '❌ Rejected' : '⏳ Pending Approval'}</span></div>
+                <div><span className="text-gray-500">Address:</span> <span className="font-medium text-gray-900">{rawPropertyData.location?.address || '—'}</span></div>
+                <div><span className="text-gray-500">Area:</span> <span className="font-medium text-gray-900">{rawPropertyData.location?.area || '—'}</span></div>
+                <div><span className="text-gray-500">City:</span> <span className="font-medium text-gray-900">{rawPropertyData.location?.city || '—'}, {rawPropertyData.location?.state || ''}</span></div>
+                <div><span className="text-gray-500">Phone:</span> <span className="font-medium text-gray-900">{rawPropertyData.contactInfo?.phone || rawPropertyData.contact_info?.phone || '—'}</span></div>
+                <div><span className="text-gray-500">Email:</span> <span className="font-medium text-gray-900">{rawPropertyData.contactInfo?.email || rawPropertyData.contact_info?.email || '—'}</span></div>
+                <div><span className="text-gray-500">Featured:</span> <span className="font-medium text-gray-900">{rawPropertyData.isFeatured || rawPropertyData.is_featured ? 'Yes' : 'No'}</span></div>
+                <div className="md:col-span-2 lg:col-span-3">
+                  <span className="text-gray-500">Amenities:</span>{' '}
+                  <span className="font-medium text-gray-900">
+                    {(rawPropertyData.amenities || []).length > 0
+                      ? rawPropertyData.amenities.map((a: string) => (
+                          <span key={a} className="inline-block px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs mr-1 mb-1 capitalize">{a}</span>
+                        ))
+                      : '—'}
+                  </span>
+                </div>
+                {rawPropertyData.description && (
+                  <div className="md:col-span-2 lg:col-span-3">
+                    <span className="text-gray-500">Description:</span>
+                    <p className="font-medium text-gray-900 mt-1">{rawPropertyData.description}</p>
+                  </div>
+                )}
+                {/* Images in view mode */}
+                {(rawPropertyData.images || []).length > 0 && (
+                  <div className="md:col-span-2 lg:col-span-3">
+                    <span className="text-gray-500">Images:</span>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
+                      {rawPropertyData.images.map((img: any, idx: number) => (
+                        <div key={idx} className="rounded-lg overflow-hidden border border-gray-200">
+                          <img
+                            src={img.url?.startsWith('http') ? img.url : `https://goroomz.in${img.url}`}
+                            alt={img.caption || `Image ${idx + 1}`}
+                            className="w-full h-24 object-cover"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">

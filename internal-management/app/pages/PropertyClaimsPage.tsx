@@ -9,6 +9,7 @@ interface PropertyClaim {
   claimantPhone: string;
   businessName?: string;
   proofOfOwnership: string;
+  documents?: Array<{ filename: string; originalName: string; path: string; size: number; mimeType: string }>;
   status: 'pending' | 'under_review' | 'approved' | 'rejected';
   verificationNotes?: string;
   rejectionReason?: string;
@@ -21,7 +22,7 @@ interface PropertyClaim {
   };
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000') + '/api';
 
 // Simple inline toast component
 const SimpleToast = ({ message, type, onClose }: { message: string; type: 'success' | 'error'; onClose: () => void }) => (
@@ -52,7 +53,7 @@ export default function PropertyClaimsPage() {
   const loadClaims = async () => {
     try {
       setIsLoading(true);
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('auth_token');
       const response = await fetch(`${API_URL}/properties/admin/claims?status=${statusFilter}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -75,7 +76,7 @@ export default function PropertyClaimsPage() {
 
     setIsSubmitting(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('auth_token');
       const response = await fetch(`${API_URL}/properties/admin/claims/${selectedClaim.id}/review`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -193,6 +194,19 @@ export default function PropertyClaimsPage() {
                     <p className="font-medium text-sm">Proof of Ownership</p>
                     <p className="text-sm text-gray-500">{claim.proofOfOwnership}</p>
                   </div>
+                  {claim.documents && claim.documents.length > 0 && (
+                    <div className="mt-2">
+                      <p className="font-medium text-sm">Uploaded Documents</p>
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {claim.documents.map((doc, idx) => (
+                          <a key={idx} href={`${API_URL.replace('/api', '')}${doc.path}`} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs hover:bg-blue-100">
+                            📎 {doc.originalName}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 {claim.status === 'pending' && (
                   <div className="flex flex-col gap-2 ml-4">

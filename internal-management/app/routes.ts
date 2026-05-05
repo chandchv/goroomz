@@ -42,6 +42,7 @@ export default [
   route("internal-users", "routes/internal-users.tsx"),
   route("internal-users/create", "routes/internal-users-create.tsx"),
   route("internal-users/:userId", "routes/internal-user-detail.tsx"),
+  route("internal-users/:userId/edit", "routes/internal-user-edit.tsx"),
   route("my-profile", "routes/my-profile.tsx"),
   
   // Lead Management
@@ -50,6 +51,9 @@ export default [
   
   // Property Claims
   route("property-claims", "routes/property-claims.tsx"),
+  
+  // Enquiries
+  route("enquiries", "routes/enquiries.tsx"),
   
   // Commission & Performance
   route("commissions", "routes/commissions.tsx"),

@@ -9,6 +9,8 @@ const PropertyOwnerDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deactivateConfirm, setDeactivateConfirm] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
 
   useEffect(() => {
     if (ownerId) {
@@ -41,10 +43,38 @@ const PropertyOwnerDetailPage: React.FC = () => {
     try {
       await superuserService.deactivatePropertyOwner(owner.id);
       alert('Property owner deactivated successfully');
-      navigate('/property-owners');
+      loadOwnerDetails();
+      setDeactivateConfirm(false);
     } catch (err: any) {
       alert(err.response?.data?.message || 'Failed to deactivate property owner');
       setDeactivateConfirm(false);
+    }
+  };
+
+  const handleActivate = async () => {
+    if (!owner) return;
+    try {
+      await superuserService.activatePropertyOwner(owner.id);
+      alert('Property owner activated successfully');
+      loadOwnerDetails();
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to activate property owner');
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!owner || !newPassword) return;
+    if (newPassword.length < 6) {
+      alert('Password must be at least 6 characters');
+      return;
+    }
+    try {
+      await superuserService.resetOwnerPassword(owner.id, newPassword);
+      alert(`Password reset successfully for ${owner.email}`);
+      setShowResetPassword(false);
+      setNewPassword('');
+    } catch (err: any) {
+      alert(err.response?.data?.message || 'Failed to reset password');
     }
   };
 
@@ -98,6 +128,16 @@ const PropertyOwnerDetailPage: React.FC = () => {
           </div>
         </div>
         <div className="flex gap-2">
+          {/* Activate button for inactive users */}
+          {!owner.isVerified && (
+            <button
+              onClick={handleActivate}
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+            >
+              ✅ Activate
+            </button>
+          )}
+          {/* Deactivate button for active users */}
           {owner.isVerified && (
             <button
               onClick={handleDeactivate}
@@ -107,7 +147,7 @@ const PropertyOwnerDetailPage: React.FC = () => {
                   : 'border border-red-600 text-red-600 hover:bg-red-50'
               }`}
             >
-              {deactivateConfirm ? 'Confirm Deactivate?' : 'Deactivate Account'}
+              {deactivateConfirm ? 'Confirm Deactivate?' : 'Deactivate'}
             </button>
           )}
           {deactivateConfirm && (
@@ -118,8 +158,47 @@ const PropertyOwnerDetailPage: React.FC = () => {
               Cancel
             </button>
           )}
+          {/* Reset Password button */}
+          <button
+            onClick={() => setShowResetPassword(!showResetPassword)}
+            className="px-4 py-2 border border-blue-600 text-blue-600 rounded hover:bg-blue-50"
+          >
+            🔑 Reset Password
+          </button>
         </div>
       </div>
+
+      {/* Reset Password Panel */}
+      {showResetPassword && (
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-blue-900 mb-2">Reset Password for {owner.email}</h3>
+          <div className="flex gap-3 items-end">
+            <div className="flex-1">
+              <label className="block text-xs text-blue-700 mb-1">New Password (min 6 characters)</label>
+              <input
+                type="text"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Enter new password"
+                className="w-full px-3 py-2 border border-blue-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+            <button
+              onClick={handleResetPassword}
+              disabled={!newPassword || newPassword.length < 6}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+            >
+              Set Password
+            </button>
+            <button
+              onClick={() => { setShowResetPassword(false); setNewPassword(''); }}
+              className="px-4 py-2 border border-gray-300 text-gray-600 rounded hover:bg-gray-50 text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Owner Information */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">

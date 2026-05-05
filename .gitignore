@@ -11,13 +11,12 @@ internal-management/.react-router/
 # Environment files (contain secrets)
 .env
 .env.local
+.env.production
 .env.production.local
 backend/.env
+backend/.env.production
 website/.env
 internal-management/.env
-
-# Keep .env.example and .env.production templates
-!backend/.env.production
 !website/.env.production
 !internal-management/.env.production
 

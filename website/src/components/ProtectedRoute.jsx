@@ -32,17 +32,21 @@ const ProtectedRoute = ({ children, role }) => {
   }
 
   if (role && user.role !== role) {
-    if (!hasShownToast.current) {
-      hasShownToast.current = true;
-      setTimeout(() => {
-        toast({
-          title: "Permission Denied",
-          description: "You do not have permission to access this page.",
-          variant: "destructive",
-        });
-      }, 0);
+    // Allow category_owner to access owner routes (backward compat)
+    const isOwnerRoute = role === 'owner' && (user.role === 'category_owner' || user.role === 'owner');
+    if (!isOwnerRoute) {
+      if (!hasShownToast.current) {
+        hasShownToast.current = true;
+        setTimeout(() => {
+          toast({
+            title: "Permission Denied",
+            description: "You do not have permission to access this page.",
+            variant: "destructive",
+          });
+        }, 0);
+      }
+      return <Navigate to="/" replace />;
     }
-    return <Navigate to="/" replace />;
   }
 
   return children;

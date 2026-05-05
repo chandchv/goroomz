@@ -12,6 +12,9 @@ import BookingModal from '@/components/BookingModal';
 import roomService from '@/services/roomService';
 import propertyService from '@/services/propertyService';
 import bookingService from '@/services/bookingService';
+import { getImageUrl } from '@/utils/imageUtils';
+import ShareButton from '@/components/ShareButton';
+import SimilarProperties from '@/components/SimilarProperties';
 
 const PropertyDetailPage = () => {
   const { roomId } = useParams();
@@ -280,7 +283,7 @@ const PropertyDetailPage = () => {
           {property.images && property.images.length > 0 ? (
             <>
               <img
-                src={property.images[currentImageIndex]?.url || property.images[0]}
+                src={getImageUrl(property.images[currentImageIndex]) || getImageUrl(property.images[0]) || ''}
                 alt={property.title}
                 className="w-full h-full object-cover"
               />
@@ -330,6 +333,14 @@ const PropertyDetailPage = () => {
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <h1 className="text-3xl font-bold">{property.title || property.name}</h1>
+                      {property.metadata?.isClaimed && (
+                        <span className="px-3 py-1 bg-green-100 text-green-700 text-sm font-semibold rounded-full flex items-center gap-1">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                          </svg>
+                          Verified Owner
+                        </span>
+                      )}
                       {isAmadeusProperty && (
                         <span className="px-3 py-1 bg-blue-100 text-blue-700 text-sm font-semibold rounded-full flex items-center gap-1">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -350,9 +361,15 @@ const PropertyDetailPage = () => {
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 bg-yellow-100 px-4 py-2 rounded-full">
-                    <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-                    <span className="font-bold">{property.rating?.average || (typeof property.rating === 'number' ? property.rating : 4.5)}</span>
+                  <div className="flex items-center gap-3">
+                    <ShareButton
+                      title={`${property.title || property.name} | GoRoomz`}
+                      text={`Check out ${property.title || property.name} on GoRoomz`}
+                    />
+                    <div className="flex items-center gap-2 bg-yellow-100 px-4 py-2 rounded-full">
+                      <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
+                      <span className="font-bold">{property.rating?.average || (typeof property.rating === 'number' ? property.rating : 4.5)}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -406,6 +423,9 @@ const PropertyDetailPage = () => {
                   </ul>
                 </div>
               )}
+
+              {/* Similar Properties */}
+              <SimilarProperties propertyId={property.id} area={property.location?.area} city={property.location?.city} />
             </div>
 
             {/* Sidebar - Room Types & Booking */}
@@ -491,15 +511,32 @@ const PropertyDetailPage = () => {
                   <p className="text-sm text-muted-foreground mb-4">
                     Have questions about this property? We're here to help!
                   </p>
-                  {property.contactInfo?.phone ? (
+                  {(property.contactInfo?.phone || property.contactInfo?.phones?.length > 0) ? (
                     <div className="space-y-2">
-                      <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => window.open(`tel:${property.contactInfo.phone}`, '_self')}
-                      >
-                        📞 Call Host
-                      </Button>
+                      {property.contactInfo.contactName && (
+                        <p className="text-sm font-medium text-gray-700 mb-1">
+                          👤 {property.contactInfo.contactName}
+                        </p>
+                      )}
+                      {property.contactInfo.phone && (
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => window.open(`tel:${property.contactInfo.phone}`, '_self')}
+                        >
+                          📞 Call {property.contactInfo.phone}
+                        </Button>
+                      )}
+                      {!property.contactInfo.phone && property.contactInfo.phones?.map((ph, idx) => (
+                        <Button
+                          key={idx}
+                          variant="outline"
+                          className="w-full"
+                          onClick={() => window.open(`tel:${ph}`, '_self')}
+                        >
+                          📞 Call {ph}
+                        </Button>
+                      ))}
                       {property.contactInfo?.email && (
                         <Button
                           variant="outline"

@@ -109,8 +109,9 @@ class PropertyService {
   /**
    * Get available areas for filtering
    */
-  async getAreas() {
-    return apiService.get('/properties/areas', { includeAuth: false });
+  async getAreas(type) {
+    const params = type ? `?type=${encodeURIComponent(type)}` : '';
+    return apiService.get(`/properties/areas${params}`, { includeAuth: false });
   }
 
   /**
@@ -121,10 +122,28 @@ class PropertyService {
   }
 
   /**
+   * Submit an enquiry for a property
+   */
+  async submitEnquiry(data) {
+    return apiService.post('/enquiries', data, { includeAuth: false });
+  }
+
+  /**
    * Submit a claim request for a property
    */
-  async claimProperty(propertyId, claimData) {
-    return apiService.post(`/properties/${propertyId}/claim`, claimData);
+  async claimProperty(propertyId, claimData, files = []) {
+    const formData = new FormData();
+    formData.append('name', claimData.name);
+    formData.append('email', claimData.email);
+    formData.append('phone', claimData.phone);
+    if (claimData.businessName) formData.append('businessName', claimData.businessName);
+    formData.append('proofOfOwnership', claimData.proofOfOwnership);
+    
+    files.forEach(file => {
+      formData.append('documents', file);
+    });
+
+    return apiService.postFormData(`/properties/${propertyId}/claim`, formData);
   }
 
   /**
