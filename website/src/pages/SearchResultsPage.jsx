@@ -47,56 +47,17 @@ const SearchResultsPage = () => {
   // Load search results
   useEffect(() => {
     const performSearch = async () => {
-      // Skip if no search criteria
-      if (!query && !location && !category && !cityCode && (!latitude || !longitude)) {
-        setIsLoading(false);
-        return;
-      }
+      // When no search criteria, load all properties (View All mode)
+      const isViewAll = !query && !location && !category && !cityCode && (!latitude || !longitude);
 
       const startTime = performance.now();
       
       try {
         setIsLoading(true);
 
-        // Determine if we should use unified search (Amadeus + local) or local-only property search
-        const useUnifiedSearch = !!(cityCode || (latitude && longitude));
-        
-        if (useUnifiedSearch) {
+        if (isViewAll) {
+          // Load all properties without filters
           const searchFilters = {
-            source: 'all',
-            cityCode: cityCode || undefined,
-            latitude: latitude ? parseFloat(latitude) : undefined,
-            longitude: longitude ? parseFloat(longitude) : undefined,
-            search: query || undefined,
-            page: 1,
-            limit: 50
-          };
-
-          const response = await propertyService.searchUnified(searchFilters);
-          
-          const endTime = performance.now();
-          setSearchPerformance({
-            duration: Math.round(endTime - startTime),
-            resultCount: response.data?.length || 0
-          });
-          
-          if (response.success) {
-            setProperties(response.data || []);
-            setSearchMeta(response.meta || {});
-            setSearchWarnings(response.warnings || null);
-          } else {
-            toast({
-              title: "Search Error",
-              description: "Failed to perform search. Please try again.",
-              variant: "destructive"
-            });
-          }
-        } else {
-          // Use property service for local property search
-          const searchFilters = {
-            search: query || undefined,
-            city: location || undefined,
-            type: category || undefined,
             page: 1,
             limit: 50
           };
@@ -112,17 +73,79 @@ const SearchResultsPage = () => {
           if (response.success) {
             setProperties(response.data || []);
             setSearchMeta({
-              total: response.data?.length || 0,
+              total: response.pagination?.total || response.data?.length || 0,
               localCount: response.data?.length || 0,
               amadeusCount: 0
             });
             setSearchWarnings(null);
-          } else {
-            toast({
-              title: "Search Error",
-              description: "Failed to perform search. Please try again.",
-              variant: "destructive"
+          }
+        } else {
+          // Determine if we should use unified search (Amadeus + local) or local-only property search
+          const useUnifiedSearch = !!(cityCode || (latitude && longitude));
+          
+          if (useUnifiedSearch) {
+            const searchFilters = {
+              source: 'all',
+              cityCode: cityCode || undefined,
+              latitude: latitude ? parseFloat(latitude) : undefined,
+              longitude: longitude ? parseFloat(longitude) : undefined,
+              search: query || undefined,
+              page: 1,
+              limit: 50
+            };
+
+            const response = await propertyService.searchUnified(searchFilters);
+            
+            const endTime = performance.now();
+            setSearchPerformance({
+              duration: Math.round(endTime - startTime),
+              resultCount: response.data?.length || 0
             });
+            
+            if (response.success) {
+              setProperties(response.data || []);
+              setSearchMeta(response.meta || {});
+              setSearchWarnings(response.warnings || null);
+            } else {
+              toast({
+                title: "Search Error",
+                description: "Failed to perform search. Please try again.",
+                variant: "destructive"
+              });
+            }
+          } else {
+            // Use property service for local property search
+            const searchFilters = {
+              search: query || undefined,
+              city: location || undefined,
+              type: category || undefined,
+              page: 1,
+              limit: 50
+            };
+
+            const response = await propertyService.getProperties(searchFilters);
+            
+            const endTime = performance.now();
+            setSearchPerformance({
+              duration: Math.round(endTime - startTime),
+              resultCount: response.data?.length || 0
+            });
+            
+            if (response.success) {
+              setProperties(response.data || []);
+              setSearchMeta({
+                total: response.pagination?.total || response.data?.length || 0,
+                localCount: response.data?.length || 0,
+                amadeusCount: 0
+              });
+              setSearchWarnings(null);
+            } else {
+              toast({
+                title: "Search Error",
+                description: "Failed to perform search. Please try again.",
+                variant: "destructive"
+              });
+            }
           }
         }
       } catch (error) {
@@ -232,7 +255,7 @@ const SearchResultsPage = () => {
     if (isPG && property.slug) {
       navigate(`/pg/${property.slug}`);
     } else {
-      navigate(`/property/${property.id}`);
+      navigate(`/property/${property.slug || property.id}`);
     }
   };
 
@@ -267,8 +290,13 @@ const SearchResultsPage = () => {
   return (
     <>
       <Helmet>
-        <title>{getSearchTitle()} - GoRoomz</title>
-        <meta name="description" content={`Find the best properties matching your search criteria on GoRoomz.`} />
+        <title>{getSearchTitle()} | PG & Rooms in Bangalore - GoRoomz</title>
+        <meta name="description" content={`${properties.length}+ results for ${query || location || category || 'PG accommodations'} in Bangalore. Verified listings with photos, prices & reviews. Zero brokerage on GoRoomz.`} />
+        <meta name="keywords" content={`${query || ''} ${location || ''} PG Bangalore, paying guest, rooms for rent, hostel`} />
+        {query && <link rel="canonical" href={`https://goroomz.in/search?q=${encodeURIComponent(query)}`} />}
+        <meta property="og:title" content={`${getSearchTitle()} | GoRoomz`} />
+        <meta property="og:description" content={`Find verified PGs and rooms matching "${query || location || 'your search'}" in Bangalore.`} />
+        <meta property="og:type" content="website" />
       </Helmet>
 
       <div className="container mx-auto px-4 py-8">

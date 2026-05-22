@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { Home, Menu, X, Building, BedDouble, Shield, LogOut, UserCircle, Plus, Bell } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Home, Menu, X, Building, BedDouble, Shield, LogOut, UserCircle, Plus, Bell, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { NavLink, Link } from 'react-router-dom';
+import { NavLink, Link, useLocation } from 'react-router-dom';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +18,9 @@ import apiService from '@/services/api';
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const location = useLocation();
+  const isHomePage = location.pathname === '/';
   const [newEnquiryCount, setNewEnquiryCount] = useState(0);
   const { user, logout } = useAuth();
 
@@ -56,16 +59,8 @@ const Header = () => {
       <header className="bg-white/95 backdrop-blur-sm sticky top-0 z-40 border-b border-gray-200 shadow-sm">
       <div className="container mx-auto px-4 py-2">
         <div className="flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-3">
-            <motion.div whileHover={{ scale: 1.02 }}>
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-600 via-pink-600 to-blue-600 flex items-center justify-center shadow-lg">
-                <Home className="w-6 h-6 text-white" />
-              </div>
-            </motion.div>
-            <div>
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">GoRoomz</h1>
-              <p className="text-sm text-gray-600">Find Your Perfect room</p>
-            </div>
+          <Link to="/" className="flex items-center">
+            <img src="/logo.svg" alt="GoRoomz" className="h-10 w-auto" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-6">
@@ -147,10 +142,37 @@ const Header = () => {
           </div>
         </div>
 
-        {/* Search Bar Section */}
-        <div className="mt-3 pb-2">
-          <SmartSearchBar placeholder="Search by city code (DEL, BOM, PAR) or location..." />
-        </div>
+        {/* Search — hidden on homepage (hero has its own), compact icon on other pages */}
+        {!isHomePage && (
+          <div className="mt-2 pb-2">
+            <AnimatePresence>
+              {isSearchOpen ? (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="relative"
+                >
+                  <SmartSearchBar placeholder="Search by city, area, or property name..." />
+                  <button
+                    onClick={() => setIsSearchOpen(false)}
+                    className="absolute -top-1 right-0 p-1 text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </motion.div>
+              ) : (
+                <button
+                  onClick={() => setIsSearchOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 w-full bg-gray-100 hover:bg-gray-200 rounded-xl text-gray-500 text-sm transition-colors"
+                >
+                  <Search className="w-4 h-4" />
+                  <span>Search properties...</span>
+                </button>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
       </div>
       {isMenuOpen && (
         <motion.div 

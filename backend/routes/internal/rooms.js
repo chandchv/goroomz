@@ -454,6 +454,10 @@ router.put('/internal/rooms/:id', async (req, res) => {
 
       // Update room using raw SQL to avoid enum conflicts
       const amenitiesValue = Array.isArray(amenities) ? `{${amenities.map(a => `"${a}"`).join(',')}}` : null;
+      
+      // Use monthlyRate for the price column (primary price), dailyRate goes in property_details/pg_options
+      const priceValue = monthlyRate || dailyRate || null;
+      
       const [result] = await sequelize.query(`
         UPDATE rooms 
         SET 
@@ -461,18 +465,19 @@ router.put('/internal/rooms/:id', async (req, res) => {
           description = COALESCE($2, description),
           price = COALESCE($3, price),
           max_guests = COALESCE($4, max_guests),
-          current_status = COALESCE($5::varchar, current_status::varchar)::enum_rooms_new_current_status,
+          current_status = $5,
           amenities = COALESCE($6::varchar[], amenities),
           is_active = COALESCE($7, is_active),
           property_details = property_details || $8::jsonb,
+          pg_options = COALESCE(pg_options, '{}'::jsonb) || $9::jsonb,
           updated_at = NOW()
-        WHERE id = $9
-        RETURNING id, title, description, price, max_guests, current_status, amenities, is_active, property_details
+        WHERE id = $10
+        RETURNING id, title, description, price, max_guests, current_status, amenities, is_active, property_details, pg_options
       `, {
         bind: [
           title || null,
           description || null,
-          dailyRate || null,
+          priceValue,
           maxGuests || null,
           currentStatus || null,
           amenitiesValue,
@@ -483,6 +488,12 @@ router.put('/internal/rooms/:id', async (req, res) => {
             dailyRate: dailyRate !== undefined ? dailyRate : undefined,
             monthlyRate: monthlyRate !== undefined ? monthlyRate : undefined,
             totalBeds: maxGuests || undefined,
+          }),
+          JSON.stringify({
+            ...(sharingType ? { sharingType } : {}),
+            ...(monthlyRate !== undefined ? { monthlyRent: monthlyRate } : {}),
+            ...(dailyRate !== undefined ? { dailyRate } : {}),
+            ...(maxGuests ? { totalBeds: maxGuests } : {}),
           }),
           id
         ]
@@ -814,7 +825,7 @@ router.post('/internal/rooms/bulk-create', async (req, res) => {
               owner_id, is_active, featured, approval_status, hotel_room_types,
               property_details, created_at, updated_at
             ) VALUES (
-              gen_random_uuid(), $1, $2, $3, $4, 'shared', $5, 
+              gen_random_uuid(), $1, $2, $3, $4, 'Shared Room', $5, 
               $6, '{}', '[]', '{}', '{"average":0,"count":0}', '{"isAvailable":true}',
               $7, true, false, 'approved', '{}',
               $8, NOW(), NOW()
@@ -1035,7 +1046,7 @@ router.post('/internal/properties/:propertyId/rooms/bulk', async (req, res) => {
         title: roomTitle,
         room_number: roomNumber,
         description: `${sharingType} room on floor ${floorNumber}`,
-        room_type: 'standard',
+        room_type: 'Shared Room',
         sharing_type: dbSharingType,
         total_beds: totalBeds,
         price: dailyRate || 0,
@@ -1256,7 +1267,7 @@ router.post('/internal/superuser/bulk-create-rooms', async (req, res) => {
         title: roomTitle,
         room_number: roomNumber,
         description: `${sharingType} room on floor ${floorNumber}`,
-        room_type: 'standard',
+        room_type: 'Shared Room',
         sharing_type: dbSharingType,
         total_beds: totalBeds,
         price: dailyRate || 0,
@@ -1350,8 +1361,8 @@ router.put('/internal/rooms/:roomId/status', async (req, res) => {
 
     await sequelize.query(`
       UPDATE rooms
-      SET current_status = $1::enum_rooms_new_current_status,
-          property_details = property_details || jsonb_build_object('currentStatus', $1),
+      SET current_status = $1,
+          property_details = COALESCE(property_details, '{}'::jsonb) || jsonb_build_object('currentStatus', $1),
           updated_at = NOW()
       WHERE id = $2
     `, { bind: [status, roomId] });

@@ -1212,6 +1212,43 @@ router.put('/internal/platform/properties/:id', async (req, res) => {
   }
 });
 
+// @desc    Delete property permanently (superuser/admin only)
+// @route   DELETE /api/internal/platform/properties/:id
+// @access  Private
+router.delete('/internal/platform/properties/:id', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+    const token = authHeader.substring(7);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findByPk(decoded.id);
+    if (!user || !['admin', 'superuser', 'platform_admin'].includes(user.role)) {
+      return res.status(403).json({ success: false, message: 'Access denied. Only admins can delete properties.' });
+    }
+
+    const property = await Property.findByPk(req.params.id);
+    if (!property) {
+      return res.status(404).json({ success: false, message: 'Property not found' });
+    }
+
+    // Delete associated rooms first
+    const { Room } = require('../../models');
+    if (Room) {
+      await Room.destroy({ where: { propertyId: req.params.id } });
+    }
+
+    // Hard delete the property
+    await property.destroy();
+
+    res.json({ success: true, message: 'Property and associated rooms deleted permanently' });
+  } catch (error) {
+    console.error('Error deleting property:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete property' });
+  }
+});
+
 // @desc    Change property owner (transfer ownership)
 // @route   PUT /api/internal/platform/properties/:id/owner
 // @access  Private

@@ -186,8 +186,23 @@ const CategoryPage = () => {
   return (
     <>
       <Helmet>
-        <title>{displayName} in Bangalore | GoRoomz</title>
-        <meta name="description" content={`Find the best ${displayName} accommodations in Bangalore on GoRoomz. Browse ${pagination.total}+ verified properties.`} />
+        <title>{displayName} in {selectedArea || 'Bangalore'} - {pagination.total}+ Verified Properties | GoRoomz</title>
+        <meta name="description" content={`Find ${pagination.total}+ verified ${displayName.toLowerCase()} accommodations${selectedArea ? ` in ${selectedArea}` : ''} in Bangalore. Browse with photos, prices, amenities & reviews. Zero brokerage, direct owner contact on GoRoomz.`} />
+        <meta name="keywords" content={`${displayName} in ${selectedArea || 'Bangalore'}, ${displayName.toLowerCase()} accommodation, ${displayName.toLowerCase()} near me, verified ${displayName.toLowerCase()}, GoRoomz`} />
+        <link rel="canonical" href={`https://goroomz.in/category/${encodeURIComponent(categoryName)}`} />
+        <meta property="og:title" content={`${pagination.total}+ ${displayName} in ${selectedArea || 'Bangalore'} | GoRoomz`} />
+        <meta property="og:description" content={`Browse verified ${displayName.toLowerCase()} in Bangalore. Zero brokerage.`} />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={`https://goroomz.in/category/${encodeURIComponent(categoryName)}`} />
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "CollectionPage",
+          "name": `${displayName} in ${selectedArea || 'Bangalore'}`,
+          "description": `Find ${pagination.total}+ verified ${displayName.toLowerCase()} accommodations in Bangalore`,
+          "url": `https://goroomz.in/category/${encodeURIComponent(categoryName)}`,
+          "numberOfItems": pagination.total,
+          "isPartOf": { "@type": "WebSite", "name": "GoRoomz", "url": "https://goroomz.in" }
+        })}</script>
       </Helmet>
 
       <div className="min-h-screen bg-gray-50">

@@ -15,7 +15,9 @@ if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && proce
 } else {
   // Fallback to service account file (for development)
   try {
-    const serviceAccount = require('./firebase-service-account.json');
+    const path = require('path');
+    const serviceAccountPath = path.join(__dirname, 'firebase-service-account.json');
+    const serviceAccount = require(serviceAccountPath);
     firebaseConfig = serviceAccount;
     isFirebaseConfigured = true;
   } catch (error) {

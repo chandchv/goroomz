@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { Helmet } from 'react-helmet';
 import { motion } from 'framer-motion';
 import { 
@@ -148,8 +148,15 @@ const PGListingPage = () => {
   return (
     <>
       <Helmet>
-        <title>PG Accommodations in Bangalore - GoRoomz</title>
-        <meta name="description" content="Find the best PG accommodations in Bangalore. Browse verified PGs with amenities, photos, and reviews." />
+        <title>{filters.area ? `PGs in ${filters.area}, Bangalore` : 'PG Accommodations in Bangalore'} - Verified PGs | GoRoomz</title>
+        <meta name="description" content={`Find ${pagination.total}+ verified PG accommodations${filters.area ? ` in ${filters.area}` : ''} in Bangalore. Boys & Girls PG with WiFi, food, AC. Zero brokerage, direct owner contact. Starting ₹5,000/month.`} />
+        <meta name="keywords" content={`PG in ${filters.area || 'Bangalore'}, paying guest ${filters.area || 'Bangalore'}, boys PG, girls PG, PG with food, PG accommodation, hostel, rooms for rent`} />
+        <link rel="canonical" href={`https://goroomz.in/pgs${filters.area ? `?area=${encodeURIComponent(filters.area)}` : ''}`} />
+        <meta property="og:title" content={`${pagination.total}+ PGs in ${filters.area || 'Bangalore'} | GoRoomz`} />
+        <meta property="og:description" content={`Find verified PG accommodations${filters.area ? ` in ${filters.area}` : ''} in Bangalore. Zero brokerage.`} />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://goroomz.in/pgs" />
+        <meta property="og:image" content="https://goroomz.in/logo-512.png" />
       </Helmet>
 
       <div className="min-h-screen bg-gray-50">
@@ -207,6 +214,24 @@ const PGListingPage = () => {
 
         {/* Results */}
         <div className="container mx-auto px-4 py-8">
+          {/* Area Quick Links for SEO */}
+          {areas.length > 0 && !isLoading && (
+            <div className="mb-8">
+              <h2 className="text-lg font-bold text-gray-900 mb-3">Browse PGs by Area</h2>
+              <div className="flex flex-wrap gap-2">
+                {areas.slice(0, 20).map(a => (
+                  <Link
+                    key={a.area}
+                    to={`/pgs-in/${a.area.toLowerCase().replace(/\s+/g, '-')}`}
+                    className="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-700 hover:border-purple-300 hover:text-purple-600 transition"
+                  >
+                    {a.area} ({a.count})
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
           {isLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {[...Array(8)].map((_, i) => (

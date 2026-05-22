@@ -627,9 +627,9 @@ const syncDatabase = async (force = false) => {
     }
     
     // Handle enum value errors
-    if (error.message && error.message.includes('invalid input value for enum')) {
-      console.warn('⚠️  Database sync encountered enum value conflicts - this is normal when schema changes');
-      console.log('✅ Database connection established and working');
+    if (error.message && (error.message.includes('invalid input value for enum') || error.message.includes('cannot cast type enum'))) {
+      console.warn('⚠️  Database sync encountered enum type conflicts - this is normal when schema has existing enum columns');
+      console.log('✅ Database connection established and working (enum columns unchanged)');
       return; // Don't throw, just continue
     }
     

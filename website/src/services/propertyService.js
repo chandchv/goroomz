@@ -115,6 +115,17 @@ class PropertyService {
   }
 
   /**
+   * Get nearby properties based on user's location
+   */
+  async getNearbyProperties(lat, lng, options = {}) {
+    const params = new URLSearchParams({ lat, lng });
+    if (options.radius) params.append('radius', options.radius);
+    if (options.limit) params.append('limit', options.limit);
+    if (options.type) params.append('type', options.type);
+    return apiService.get(`/properties/nearby?${params.toString()}`, { includeAuth: false });
+  }
+
+  /**
    * Get single property details
    */
   async getProperty(id) {

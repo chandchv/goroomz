@@ -335,13 +335,26 @@ const SuperuserDashboardPage: React.FC = () => {
                       </div>
                       <span className="text-xs font-medium text-gray-700 text-center">Settings</span>
                     </button>
+                    <button 
+                      onClick={() => navigate('/platform/properties')}
+                      className="flex flex-col items-center gap-2 p-3 rounded-lg hover:bg-gray-50 transition-colors group"
+                    >
+                      <div className="p-3 bg-teal-50 rounded-lg group-hover:bg-teal-100 transition-colors">
+                        <svg className="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
+                      </div>
+                      <span className="text-xs font-medium text-gray-700 text-center">Properties</span>
+                    </button>
+
                   </div>
                 </div>
 
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
                   {/* Total Properties */}
-                  <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg hover:shadow-xl transition-shadow p-4 sm:p-6 text-white">
+                 
+                  <div onClick={() => navigate('/platform/properties')} className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg hover:shadow-xl transition-shadow p-4 sm:p-6 text-white cursor-pointer">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-xs sm:text-sm font-semibold opacity-90">Total Properties</h3>
                       <div className="p-2 bg-white bg-opacity-20 rounded-lg">
@@ -365,7 +378,7 @@ const SuperuserDashboardPage: React.FC = () => {
                   </div>
 
                   {/* Total Bookings */}
-                  <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg hover:shadow-xl transition-shadow p-4 sm:p-6 text-white">
+                  <div onClick={() => navigate('/bookings')} className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg hover:shadow-xl transition-shadow p-4 sm:p-6 text-white cursor-pointer">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-xs sm:text-sm font-semibold opacity-90">Total Bookings</h3>
                       <div className="p-2 bg-white bg-opacity-20 rounded-lg">
@@ -389,7 +402,7 @@ const SuperuserDashboardPage: React.FC = () => {
                   </div>
 
                   {/* Total Revenue */}
-                  <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg hover:shadow-xl transition-shadow p-4 sm:p-6 text-white">
+                  <div onClick={() => setActiveTab('financial')} className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg hover:shadow-xl transition-shadow p-4 sm:p-6 text-white cursor-pointer">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-xs sm:text-sm font-semibold opacity-90">Total Revenue</h3>
                       <div className="p-2 bg-white bg-opacity-20 rounded-lg">
@@ -413,7 +426,7 @@ const SuperuserDashboardPage: React.FC = () => {
                   </div>
 
                   {/* Total Internal Users */}
-                  <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-lg hover:shadow-xl transition-shadow p-4 sm:p-6 text-white">
+                  <div onClick={() => navigate('/internal-users')} className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-lg hover:shadow-xl transition-shadow p-4 sm:p-6 text-white cursor-pointer">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-xs sm:text-sm font-semibold opacity-90">Internal Users</h3>
                       <div className="p-2 bg-white bg-opacity-20 rounded-lg">

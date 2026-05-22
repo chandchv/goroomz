@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import api from '../services/api';
 import BulkRoomCreationModal from '../components/BulkRoomCreationModal';
+import WalkInModal from '../components/bookings/WalkInModal';
 import RoomEditModal from '../components/RoomEditModal';
 import { useRole } from '../hooks/useRole';
 import { useAuth } from '../contexts/AuthContext';
@@ -46,6 +47,7 @@ export default function PropertyDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [showBulkRoomModal, setShowBulkRoomModal] = useState(false);
   const [showEditRoomModal, setShowEditRoomModal] = useState(false);
+  const [walkInRoom, setWalkInRoom] = useState<Room | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [filterFloor, setFilterFloor] = useState<string>('');
   const [filterSharing, setFilterSharing] = useState<string>('');
@@ -203,6 +205,10 @@ export default function PropertyDetailPage() {
 
   const startEditingProperty = () => {
     if (!rawPropertyData) return;
+    const metadata = rawPropertyData.metadata || {};
+    const pgOptions = metadata.pgOptions || {};
+    const sharingPrices = pgOptions.sharingPrices || {};
+    const sharingDailyPrices = pgOptions.sharingDailyPrices || {};
     setEditForm({
       name: rawPropertyData.name || '',
       description: rawPropertyData.description || '',
@@ -218,6 +224,17 @@ export default function PropertyDetailPage() {
       images: rawPropertyData.images || [],
       isActive: rawPropertyData.isActive !== false && rawPropertyData.is_active !== false,
       isFeatured: rawPropertyData.isFeatured || rawPropertyData.is_featured || false,
+      // Pricing
+      priceSingle: sharingPrices.single || '',
+      priceDouble: sharingPrices.double || '',
+      priceTriple: sharingPrices.triple || '',
+      priceQuad: sharingPrices.quad || '',
+      dailySingle: sharingDailyPrices.single || '',
+      dailyDouble: sharingDailyPrices.double || '',
+      dailyTriple: sharingDailyPrices.triple || '',
+      dailyQuad: sharingDailyPrices.quad || '',
+      basePrice: pgOptions.basePrice || rawPropertyData.price || '',
+      genderPreference: metadata.genderPreference || '',
     });
     setIsEditingProperty(true);
   };
@@ -225,6 +242,36 @@ export default function PropertyDetailPage() {
   const savePropertyEdits = async () => {
     try {
       setSaving(true);
+
+      // Build sharing prices from form
+      const sharingPrices: any = {};
+      const sharingDailyPrices: any = {};
+      if (editForm.priceSingle) sharingPrices.single = Number(editForm.priceSingle);
+      if (editForm.priceDouble) sharingPrices.double = Number(editForm.priceDouble);
+      if (editForm.priceTriple) sharingPrices.triple = Number(editForm.priceTriple);
+      if (editForm.priceQuad) sharingPrices.quad = Number(editForm.priceQuad);
+      if (editForm.dailySingle) sharingDailyPrices.single = Number(editForm.dailySingle);
+      if (editForm.dailyDouble) sharingDailyPrices.double = Number(editForm.dailyDouble);
+      if (editForm.dailyTriple) sharingDailyPrices.triple = Number(editForm.dailyTriple);
+      if (editForm.dailyQuad) sharingDailyPrices.quad = Number(editForm.dailyQuad);
+
+      // Calculate base price (lowest sharing price)
+      const allPrices = Object.values(sharingPrices).filter((p: any) => p > 0) as number[];
+      const basePrice = editForm.basePrice ? Number(editForm.basePrice) : (allPrices.length > 0 ? Math.min(...allPrices) : 0);
+
+      // Merge with existing metadata
+      const existingMetadata = rawPropertyData.metadata || {};
+      const updatedMetadata = {
+        ...existingMetadata,
+        genderPreference: editForm.genderPreference || existingMetadata.genderPreference,
+        pgOptions: {
+          ...(existingMetadata.pgOptions || {}),
+          basePrice,
+          sharingPrices,
+          sharingDailyPrices,
+        },
+      };
+
       const updateData = {
         name: editForm.name,
         description: editForm.description,
@@ -242,6 +289,7 @@ export default function PropertyDetailPage() {
         images: editForm.images || [],
         is_active: editForm.isActive,
         is_featured: editForm.isFeatured,
+        metadata: updatedMetadata,
       };
 
       await api.put(`/api/internal/platform/properties/${propertyId}`, updateData);
@@ -257,18 +305,36 @@ export default function PropertyDetailPage() {
 
   const togglePropertyStatus = async () => {
     if (!rawPropertyData) return;
-    const newStatus = rawPropertyData.is_active === false ? true : false;
-    if (!confirm(`Are you sure you want to ${newStatus ? 'activate' : 'deactivate'} this property?`)) return;
+    const currentlyActive = rawPropertyData.isActive !== false && rawPropertyData.is_active !== false;
+    const newStatus = !currentlyActive;
+    const action = newStatus ? 'activate' : 'deactivate';
+    if (!window.confirm(`Are you sure you want to ${action} this property?`)) return;
     try {
-      await api.put(`/api/internal/platform/properties/${propertyId}`, { is_active: newStatus });
+      await api.put(`/api/internal/platform/properties/${propertyId}`, { 
+        is_active: newStatus,
+        isActive: newStatus 
+      });
       loadPropertyDetails();
+      alert(`Property ${action}d successfully!`);
     } catch (err: any) {
       alert('Failed: ' + (err.response?.data?.message || err.message));
     }
   };
 
+  const deleteProperty = async () => {
+    if (!window.confirm('⚠️ Are you sure you want to DELETE this property? This will permanently remove the property and all its rooms. This action CANNOT be undone.')) return;
+    if (!window.confirm('This is your final confirmation. Type OK to proceed with deletion.')) return;
+    try {
+      await api.delete(`/api/internal/platform/properties/${propertyId}`);
+      alert('Property deleted successfully.');
+      navigate('/properties');
+    } catch (err: any) {
+      alert('Failed to delete: ' + (err.response?.data?.message || err.message));
+    }
+  };
+
   const approveProperty = async () => {
-    if (!confirm('Approve this property? It will become visible on the public website.')) return;
+    if (!window.confirm('Approve this property? It will become visible on the public website.')) return;
     try {
       await api.put(`/api/internal/platform/properties/${propertyId}`, {
         is_active: true,
@@ -282,7 +348,7 @@ export default function PropertyDetailPage() {
   };
 
   const rejectProperty = async () => {
-    const reason = prompt('Rejection reason:');
+    const reason = window.prompt('Rejection reason:');
     if (!reason) return;
     try {
       await api.put(`/api/internal/platform/properties/${propertyId}`, {
@@ -308,7 +374,7 @@ export default function PropertyDetailPage() {
   };
 
   const handleDeleteRoom = async (roomId: string) => {
-    if (!confirm('Are you sure you want to delete this room? This action cannot be undone.')) {
+    if (!window.confirm('Are you sure you want to delete this room? This action cannot be undone.')) {
       return;
     }
 
@@ -499,6 +565,10 @@ export default function PropertyDetailPage() {
                     className={`px-3 py-1.5 text-sm rounded ${rawPropertyData.is_active !== false ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}>
                     {rawPropertyData.is_active !== false ? '⏸ Deactivate' : '▶ Activate'}
                   </button>
+                  <button onClick={deleteProperty}
+                    className="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700">
+                    🗑️ Delete
+                  </button>
                 </>
               ) : (
                 <>
@@ -569,6 +639,79 @@ export default function PropertyDetailPage() {
                     placeholder="wifi, ac, tv, parking, meals, laundry, security, cctv"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900" />
                 </div>
+
+                {/* Pricing Section */}
+                <div className="md:col-span-2 border-t border-gray-200 pt-4 mt-2">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">💰 Pricing (Monthly Rent)</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Single Room (₹/month)</label>
+                      <input type="number" value={editForm.priceSingle} onChange={e => setEditForm({...editForm, priceSingle: e.target.value})}
+                        placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Double Sharing (₹/month)</label>
+                      <input type="number" value={editForm.priceDouble} onChange={e => setEditForm({...editForm, priceDouble: e.target.value})}
+                        placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Triple Sharing (₹/month)</label>
+                      <input type="number" value={editForm.priceTriple} onChange={e => setEditForm({...editForm, priceTriple: e.target.value})}
+                        placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Quad Sharing (₹/month)</label>
+                      <input type="number" value={editForm.priceQuad} onChange={e => setEditForm({...editForm, priceQuad: e.target.value})}
+                        placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">📅 Daily Rates (optional)</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Single (₹/day)</label>
+                      <input type="number" value={editForm.dailySingle} onChange={e => setEditForm({...editForm, dailySingle: e.target.value})}
+                        placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Double (₹/day)</label>
+                      <input type="number" value={editForm.dailyDouble} onChange={e => setEditForm({...editForm, dailyDouble: e.target.value})}
+                        placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Triple (₹/day)</label>
+                      <input type="number" value={editForm.dailyTriple} onChange={e => setEditForm({...editForm, dailyTriple: e.target.value})}
+                        placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Quad (₹/day)</label>
+                      <input type="number" value={editForm.dailyQuad} onChange={e => setEditForm({...editForm, dailyQuad: e.target.value})}
+                        placeholder="0" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Base Price (₹/month) — auto-calculated if empty</label>
+                      <input type="number" value={editForm.basePrice} onChange={e => setEditForm({...editForm, basePrice: e.target.value})}
+                        placeholder="Auto (lowest sharing price)" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Gender Preference</label>
+                      <select value={editForm.genderPreference} onChange={e => setEditForm({...editForm, genderPreference: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 text-sm">
+                        <option value="">Any / Co-ed</option>
+                        <option value="male">Boys / Gents Only</option>
+                        <option value="female">Girls / Ladies Only</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Images Section */}
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-2">Images ({(editForm.images || []).length}/10)</label>
@@ -648,6 +791,59 @@ export default function PropertyDetailPage() {
                     <p className="font-medium text-gray-900 mt-1">{rawPropertyData.description}</p>
                   </div>
                 )}
+                {/* Pricing in view mode */}
+                {(() => {
+                  const pgOpts = rawPropertyData.metadata?.pgOptions || {};
+                  const sp = pgOpts.sharingPrices || {};
+                  const dp = pgOpts.sharingDailyPrices || {};
+                  const hasPricing = sp.single || sp.double || sp.triple || sp.quad || pgOpts.basePrice;
+                  if (!hasPricing) return null;
+                  return (
+                    <div className="md:col-span-2 lg:col-span-3 border-t border-gray-100 pt-3 mt-2">
+                      <span className="text-gray-500 font-medium">💰 Pricing:</span>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
+                        {sp.single > 0 && (
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                            <div className="text-xs text-gray-500">Single</div>
+                            <div className="text-lg font-bold text-green-700">₹{Number(sp.single).toLocaleString()}</div>
+                            <div className="text-xs text-gray-400">/month</div>
+                            {dp.single > 0 && <div className="text-xs text-blue-600 mt-1">₹{dp.single}/day</div>}
+                          </div>
+                        )}
+                        {sp.double > 0 && (
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+                            <div className="text-xs text-gray-500">Double</div>
+                            <div className="text-lg font-bold text-blue-700">₹{Number(sp.double).toLocaleString()}</div>
+                            <div className="text-xs text-gray-400">/month</div>
+                            {dp.double > 0 && <div className="text-xs text-blue-600 mt-1">₹{dp.double}/day</div>}
+                          </div>
+                        )}
+                        {sp.triple > 0 && (
+                          <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-center">
+                            <div className="text-xs text-gray-500">Triple</div>
+                            <div className="text-lg font-bold text-purple-700">₹{Number(sp.triple).toLocaleString()}</div>
+                            <div className="text-xs text-gray-400">/month</div>
+                            {dp.triple > 0 && <div className="text-xs text-blue-600 mt-1">₹{dp.triple}/day</div>}
+                          </div>
+                        )}
+                        {sp.quad > 0 && (
+                          <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 text-center">
+                            <div className="text-xs text-gray-500">Quad</div>
+                            <div className="text-lg font-bold text-orange-700">₹{Number(sp.quad).toLocaleString()}</div>
+                            <div className="text-xs text-gray-400">/month</div>
+                            {dp.quad > 0 && <div className="text-xs text-blue-600 mt-1">₹{dp.quad}/day</div>}
+                          </div>
+                        )}
+                      </div>
+                      {pgOpts.basePrice > 0 && (
+                        <div className="mt-2 text-sm text-gray-600">Base Price: <span className="font-semibold text-gray-900">₹{Number(pgOpts.basePrice).toLocaleString()}/month</span></div>
+                      )}
+                      {rawPropertyData.metadata?.genderPreference && (
+                        <div className="mt-1 text-sm text-gray-600">Gender: <span className="font-semibold text-gray-900 capitalize">{rawPropertyData.metadata.genderPreference === 'male' ? 'Boys/Gents Only' : rawPropertyData.metadata.genderPreference === 'female' ? 'Girls/Ladies Only' : 'Co-ed'}</span></div>
+                      )}
+                    </div>
+                  );
+                })()}
                 {/* Images in view mode */}
                 {(rawPropertyData.images || []).length > 0 && (
                   <div className="md:col-span-2 lg:col-span-3">
@@ -867,6 +1063,16 @@ export default function PropertyDetailPage() {
                         >
                           View Details
                         </button>
+                        {/* Walk-in check-in button — only for vacant/available rooms */}
+                        {(room.currentStatus === 'vacant_clean' || room.currentStatus === 'vacant_dirty' ||
+                          (room.currentStatus === 'occupied' && room.sharingType !== 'single' && room.availableBeds > 0)) && (
+                          <button
+                            onClick={() => setWalkInRoom(room)}
+                            className="w-full px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700 mb-2 flex items-center justify-center gap-1"
+                          >
+                            🚶 Walk-in Check-in
+                          </button>
+                        )}
                         {canAddRooms && (
                           <div className="flex gap-2">
                             <button
@@ -917,6 +1123,21 @@ export default function PropertyDetailPage() {
           onClose={() => setShowEditRoomModal(false)}
           room={selectedRoom}
           onSuccess={handleEditRoomSuccess}
+        />
+      )}
+
+      {/* Walk-in Check-in Modal */}
+      {walkInRoom && rawPropertyData && (
+        <WalkInModal
+          room={walkInRoom}
+          propertyId={rawPropertyData.id}
+          ownerId={rawPropertyData.ownerId || rawPropertyData.owner_id}
+          onClose={() => setWalkInRoom(null)}
+          onSuccess={() => {
+            setWalkInRoom(null);
+            loadPropertyDetails();
+            alert('Walk-in check-in registered successfully!');
+          }}
         />
       )}
     </div>

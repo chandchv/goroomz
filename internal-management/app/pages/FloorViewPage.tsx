@@ -4,9 +4,23 @@ import RoomDetailModal from '../components/rooms/RoomDetailModal';
 import RoomStatusUpdateModal from '../components/rooms/RoomStatusUpdateModal';
 import InstantCheckInModal from '../components/checkin/InstantCheckInModal';
 import BedSelectionModal from '../components/checkin/BedSelectionModal';
+import WalkInModal from '../components/bookings/WalkInModal';
 import PropertyIndicator from '../components/PropertyIndicator';
 import roomService, { type Room } from '../services/roomService';
 import { useSelectedProperty } from '../hooks/useSelectedProperty';
+import { api } from '../services/api';
+
+const SHARING_TYPES = [
+  { value: 'single', label: 'Single', beds: 1, icon: '🛏️' },
+  { value: 'double', label: 'Double', beds: 2, icon: '🛏️🛏️' },
+  { value: 'triple', label: 'Triple', beds: 3, icon: '🛏️🛏️🛏️' },
+  { value: 'four', label: 'Four', beds: 4, icon: '🛏️🛏️🛏️🛏️' },
+];
+
+const ROOM_AMENITIES = [
+  'AC', 'Attached Bathroom', 'Balcony', 'WiFi', 'Wardrobe',
+  'Study Table', 'Geyser', 'Power Backup', 'TV', 'Cooler'
+];
 
 const FloorViewPage: React.FC = () => {
   const { selectedProperty, hasMultipleProperties } = useSelectedProperty();
@@ -23,6 +37,24 @@ const FloorViewPage: React.FC = () => {
   const [instantCheckInRoom, setInstantCheckInRoom] = useState<Room | null>(null);
   const [bedSelectionRoom, setBedSelectionRoom] = useState<Room | null>(null);
   const [selectedBedId, setSelectedBedId] = useState<string | undefined>(undefined);
+
+  // Walk-in modal state
+  const [walkInRoom, setWalkInRoom] = useState<Room | null>(null);
+
+  // Room create/edit modal state
+  const [showRoomModal, setShowRoomModal] = useState(false);
+  const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+  const [roomSaving, setRoomSaving] = useState(false);
+  const [roomForm, setRoomForm] = useState({
+    roomNumber: '',
+    floorNumber: '1',
+    sharingType: 'double',
+    totalBeds: 2,
+    monthlyRent: '',
+    dailyRate: '',
+    securityDeposit: '',
+    amenities: [] as string[],
+  });
 
   // Load rooms and floors when component mounts or property changes
   useEffect(() => {
@@ -76,24 +108,18 @@ const FloorViewPage: React.FC = () => {
         : rooms.filter(room => room.floorNumber === selectedFloor))
     : [];
 
-  // Handle room click - detect vacant rooms for instant check-in
+  // Handle room click — open walk-in for vacant rooms, detail modal for occupied
   const handleRoomClick = (room: Room) => {
-    const status = room.currentStatus || room.current_status;
+    const status = room.currentStatus || (room as any).current_status || '';
     const isVacant = status === 'vacant_clean' || status === 'vacant_dirty';
-    const isSharedRoom = room.sharingType && room.sharingType !== 'single' && room.totalBeds && room.totalBeds > 1;
-    
-    if (isVacant) {
-      // For vacant rooms, check if it's a shared room
-      if (isSharedRoom) {
-        // Show bed selection first for shared rooms
-        setBedSelectionRoom(room);
-      } else {
-        // Open instant check-in directly for single rooms
-        setInstantCheckInRoom(room);
-        setSelectedBedId(undefined);
-      }
+    const isSharing = !!(room.sharingType && room.sharingType !== 'single');
+    const hasAvailableBeds = isSharing && ((room.totalBeds || 1) - (room.occupiedBeds || 0)) > 0;
+
+    if (isVacant || hasAvailableBeds) {
+      // Open quick walk-in check-in
+      setWalkInRoom(room);
     } else {
-      // For occupied or other status rooms, show detail modal
+      // Occupied single room — show detail modal
       setSelectedRoom(room);
     }
   };
@@ -146,8 +172,133 @@ const FloorViewPage: React.FC = () => {
 
   // Handle edit room
   const handleEditRoom = (room: Room) => {
-    // TODO: Will be implemented later
-    console.log('Edit room clicked:', room);
+    setEditingRoom(room);
+    const r = room as any;
+    setRoomForm({
+      roomNumber: r.roomNumber || '',
+      floorNumber: String(r.floorNumber || 1),
+      sharingType: r.sharingType || r.pgOptions?.sharingType || 'double',
+      totalBeds: r.totalBeds || r.maxGuests || 2,
+      monthlyRent: String(r.pgOptions?.monthlyRent || r.monthlyRate || r.price || ''),
+      dailyRate: String(r.pgOptions?.dailyRate || r.dailyRate || ''),
+      securityDeposit: String(r.pgOptions?.securityDeposit || ''),
+      amenities: r.amenities || [],
+    });
+    setShowRoomModal(true);
+  };
+
+  const handleAddRoom = () => {
+    setEditingRoom(null);
+    setRoomForm({
+      roomNumber: '',
+      floorNumber: selectedFloor === 'all' ? '1' : String(selectedFloor),
+      sharingType: 'double',
+      totalBeds: 2,
+      monthlyRent: '',
+      dailyRate: '',
+      securityDeposit: '',
+      amenities: [],
+    });
+    setShowRoomModal(true);
+  };
+
+  const handleSharingChange = (type: string) => {
+    const config = SHARING_TYPES.find(s => s.value === type);
+    setRoomForm(prev => ({ ...prev, sharingType: type, totalBeds: config?.beds || prev.totalBeds }));
+  };
+
+  const handleAmenityToggle = (amenity: string) => {
+    setRoomForm(prev => ({
+      ...prev,
+      amenities: prev.amenities.includes(amenity)
+        ? prev.amenities.filter(a => a !== amenity)
+        : [...prev.amenities, amenity]
+    }));
+  };
+
+  const handleRoomSave = async () => {
+    if (!roomForm.roomNumber || !roomForm.monthlyRent || !selectedProperty) return;
+
+    // Check for duplicate room number within the same property (only for new rooms)
+    if (!editingRoom) {
+      const duplicate = rooms.find(r => r.roomNumber === roomForm.roomNumber);
+      if (duplicate) {
+        alert(`Room number ${roomForm.roomNumber} already exists in this property. Please use a different number.`);
+        return;
+      }
+    }
+
+    const sharingLabel = SHARING_TYPES.find(s => s.value === roomForm.sharingType)?.label || 'Double';
+    const title = `${sharingLabel} Sharing Room - ${roomForm.roomNumber}`;
+    const description = `${sharingLabel} sharing PG room (Room ${roomForm.roomNumber}) on floor ${roomForm.floorNumber} with ${roomForm.totalBeds} bed(s). Monthly rent ₹${roomForm.monthlyRent} per bed.`;
+
+    const payload = {
+      title,
+      roomNumber: roomForm.roomNumber,
+      description,
+      price: Number(roomForm.monthlyRent),
+      roomType: 'PG',
+      category: 'PG',
+      maxGuests: Number(roomForm.totalBeds),
+      amenities: roomForm.amenities,
+      pricingType: 'monthly',
+      approvalStatus: 'approved',
+      isActive: true,
+      currentStatus: 'vacant_clean',
+      location: { city: 'Bangalore', state: 'Karnataka', area: selectedProperty.location || '' },
+      propertyDetails: {
+        propertyId: selectedProperty.id,
+        floorNumber: Number(roomForm.floorNumber),
+        totalBeds: Number(roomForm.totalBeds),
+        dailyRate: Number(roomForm.dailyRate) || 0,
+        monthlyRate: Number(roomForm.monthlyRent),
+      },
+      pgOptions: {
+        sharingType: roomForm.sharingType,
+        monthlyRent: Number(roomForm.monthlyRent),
+        dailyRate: Number(roomForm.dailyRate) || 0,
+        securityDeposit: Number(roomForm.securityDeposit) || 0,
+        noticePeriod: 30,
+        foodIncluded: false,
+      },
+    };
+
+    try {
+      setRoomSaving(true);
+      if (editingRoom) {
+        await api.put(`/api/rooms/${editingRoom.id}`, payload);
+      } else {
+        await api.post('/api/rooms', payload);
+      }
+      setShowRoomModal(false);
+      setEditingRoom(null);
+      loadRooms();
+    } catch (err: any) {
+      alert('Failed to save room: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setRoomSaving(false);
+    }
+  };
+
+  const handleDeleteRoom = async (room: Room) => {
+    if (!confirm(`Delete Room ${room.roomNumber || (room as any).title}? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/api/rooms/${room.id}`);
+      loadRooms();
+    } catch (err: any) {
+      alert('Failed to delete room: ' + (err.response?.data?.message || err.message));
+    }
+  };
+
+  const handleStatusChange = async (room: Room, newStatus: string) => {
+    try {
+      await api.put(`/api/internal/rooms/${room.id}/status`, { status: newStatus });
+      // Update local state immediately for responsiveness
+      setRooms(prev => prev.map(r => r.id === room.id ? { ...r, currentStatus: newStatus as any } : r));
+    } catch (err: any) {
+      alert('Failed to update status: ' + (err.response?.data?.message || err.message));
+      loadRooms(); // Reload on error to get correct state
+    }
   };
 
   // Handle room booking
@@ -242,14 +393,37 @@ const FloorViewPage: React.FC = () => {
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Floor View</h1>
             <p className="text-gray-600">Manage rooms and view status by floor</p>
           </div>
-          {hasMultipleProperties && (
-            <div className="text-right">
-              <PropertyIndicator size="md" className="mb-2" />
-              <p className="text-sm text-gray-500">
-                Last updated: {lastUpdated.toLocaleTimeString()}
-              </p>
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                // Open walk-in with no pre-selected room — user picks from available
+                // Find first vacant room and open walk-in, or show a message
+                const firstVacant = rooms.find(r => r.currentStatus === 'vacant_clean' || r.currentStatus === 'vacant_dirty');
+                if (firstVacant) {
+                  setWalkInRoom(firstVacant);
+                } else {
+                  alert('No vacant rooms available. Please select a room from the floor view.');
+                }
+              }}
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2 text-sm font-medium"
+            >
+              🚶 Walk-in Check-in
+            </button>
+            <button
+              onClick={handleAddRoom}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 text-sm font-medium"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Add Room
+            </button>
+            {hasMultipleProperties && (
+              <div className="text-right">
+                <PropertyIndicator size="md" className="mb-2" />
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -336,7 +510,7 @@ const FloorViewPage: React.FC = () => {
 
       {/* Room Grid */}
       {filteredRooms.length > 0 ? (
-        <RoomGrid rooms={filteredRooms} onRoomClick={handleRoomClick} />
+        <RoomGrid rooms={filteredRooms} onRoomClick={handleRoomClick} onEditRoom={handleEditRoom} onDeleteRoom={handleDeleteRoom} onStatusChange={handleStatusChange} />
       ) : (
         <div className="text-center py-12">
           <div className="mb-4">
@@ -414,6 +588,191 @@ const FloorViewPage: React.FC = () => {
           onClose={handleInstantCheckInClose}
           onSuccess={handleInstantCheckInSuccess}
         />
+      )}
+
+      {/* Walk-In Modal — quick check-in from floor view */}
+      {walkInRoom && selectedProperty && (
+        <WalkInModal
+          room={walkInRoom}
+          propertyId={selectedProperty.id}
+          ownerId={selectedProperty.ownerId || (selectedProperty as any).owner_id || ''}
+          onClose={() => setWalkInRoom(null)}
+          onSuccess={() => {
+            setWalkInRoom(null);
+            loadRooms();
+            alert('Walk-in check-in registered successfully!');
+          }}
+        />
+      )}
+
+      {/* Room Create/Edit Modal */}
+      {showRoomModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 bg-black/50" onClick={() => setShowRoomModal(false)} />
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b px-6 py-4 rounded-t-xl flex items-center justify-between z-10">
+              <h3 className="text-lg font-bold text-gray-900">
+                {editingRoom ? `Edit Room ${editingRoom.roomNumber || ''}` : 'Add New Room'}
+              </h3>
+              <button onClick={() => setShowRoomModal(false)} className="p-2 hover:bg-gray-100 rounded-full">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              {/* Room Number & Floor */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Room Number *</label>
+                  <input
+                    type="text"
+                    value={roomForm.roomNumber}
+                    onChange={(e) => setRoomForm(prev => ({ ...prev, roomNumber: e.target.value }))}
+                    placeholder="e.g. 101, G102"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Floor Number</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="20"
+                    value={roomForm.floorNumber}
+                    onChange={(e) => setRoomForm(prev => ({ ...prev, floorNumber: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Sharing Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Sharing Type *</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {SHARING_TYPES.map(type => (
+                    <button
+                      key={type.value}
+                      type="button"
+                      onClick={() => handleSharingChange(type.value)}
+                      className={`p-3 rounded-lg border-2 text-center transition-all ${
+                        roomForm.sharingType === type.value
+                          ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                          : 'border-gray-200 hover:border-blue-300'
+                      }`}
+                    >
+                      <div className="text-lg mb-1">{type.icon}</div>
+                      <p className="text-xs font-medium">{type.label}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Beds */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Number of Beds</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="8"
+                  value={roomForm.totalBeds}
+                  onChange={(e) => setRoomForm(prev => ({ ...prev, totalBeds: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Pricing */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Rent/Bed (₹) *</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={roomForm.monthlyRent}
+                    onChange={(e) => setRoomForm(prev => ({ ...prev, monthlyRent: e.target.value }))}
+                    placeholder="8000"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Daily Rate/Bed (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={roomForm.dailyRate}
+                    onChange={(e) => setRoomForm(prev => ({ ...prev, dailyRate: e.target.value }))}
+                    placeholder="500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Security Deposit (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={roomForm.securityDeposit}
+                    onChange={(e) => setRoomForm(prev => ({ ...prev, securityDeposit: e.target.value }))}
+                    placeholder="10000"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-900 focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Amenities */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Room Amenities</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {ROOM_AMENITIES.map(amenity => (
+                    <label
+                      key={amenity}
+                      className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer transition-colors ${
+                        roomForm.amenities.includes(amenity)
+                          ? 'border-blue-300 bg-blue-50'
+                          : 'border-gray-200 hover:border-blue-200'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={roomForm.amenities.includes(amenity)}
+                        onChange={() => handleAmenityToggle(amenity)}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">{amenity}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3 pt-4 border-t">
+                <button
+                  onClick={() => setShowRoomModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                {editingRoom && (
+                  <button
+                    onClick={() => { setShowRoomModal(false); handleDeleteRoom(editingRoom); }}
+                    className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100"
+                  >
+                    Delete
+                  </button>
+                )}
+                <button
+                  onClick={handleRoomSave}
+                  disabled={roomSaving || !roomForm.roomNumber || !roomForm.monthlyRent}
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {roomSaving ? 'Saving...' : editingRoom ? 'Update Room' : 'Add Room'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

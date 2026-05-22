@@ -72,13 +72,8 @@ const Room = sequelize.define('Room', {
     defaultValue: [],
     validate: {
       isValidAmenities(value) {
-        const validAmenities = [
-          'wifi', 'meals', 'parking', 'laundry', 'ac', 'tv', 
-          'gym', 'security', 'balcony', 'kitchen', 'washing-machine',
-          'refrigerator', 'microwave', 'iron', 'heater', 'cctv'
-        ];
-        if (value && !value.every(amenity => validAmenities.includes(amenity))) {
-          throw new Error('Invalid amenity provided');
+        if (value && !Array.isArray(value)) {
+          throw new Error('Amenities must be an array');
         }
       }
     }

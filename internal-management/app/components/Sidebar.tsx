@@ -192,7 +192,8 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   // Close sidebar on route change (mobile)
   useEffect(() => {
     onClose();
-  }, [location.pathname, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
   // Prevent body scroll when sidebar is open on mobile
   useEffect(() => {
@@ -211,7 +212,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       {/* Overlay for mobile/tablet */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          className="fixed inset-0 z-40 lg:hidden"
           onClick={onClose}
           aria-hidden="true"
         />
@@ -220,7 +221,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       {/* Sidebar */}
       <aside
         className={`
-          fixed lg:static inset-y-0 left-0 z-50
+          fixed lg:static top-14 md:top-16 lg:top-0 bottom-0 left-0 z-50
           w-64 md:w-72 bg-white border-r border-gray-200 
           transform transition-transform duration-300 ease-in-out
           lg:transform-none

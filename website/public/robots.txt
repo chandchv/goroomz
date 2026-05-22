@@ -1,4 +1,23 @@
 User-agent: *
 Allow: /
+Allow: /pgs
+Allow: /pgs-in/*
+Allow: /pg/*
+Allow: /category/*
+Allow: /search
+Allow: /about
+Allow: /privacy
+Allow: /terms
 
+Disallow: /admin
+Disallow: /owner/
+Disallow: /login
+Disallow: /signup
+Disallow: /api/
+
+# Sitemaps
 Sitemap: https://goroomz.in/sitemap.xml
+Sitemap: https://goroomz.in/sitemap-areas.xml
+
+# Crawl-delay
+Crawl-delay: 1

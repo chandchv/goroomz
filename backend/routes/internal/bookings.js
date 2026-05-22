@@ -880,14 +880,19 @@ router.post('/internal/bookings', authenticateUser, requireRoles(['admin', 'cate
       }
     }
 
-    // Calculate check-out date if not provided (default 30 days for monthly)
+    // Calculate check-out date if not provided
     const checkIn = new Date(bookingData.checkIn);
     let checkOut;
+    let isOpenEnded = false;
     if (bookingData.checkOut) {
       checkOut = new Date(bookingData.checkOut);
     } else if (bookingData.bookingType === 'monthly') {
+      // Open-ended monthly tenancy — no fixed checkout date
+      // Set a far-future date (5 years) so the booking stays active
+      // The actual checkout will be recorded when the tenant gives notice
+      isOpenEnded = true;
       checkOut = new Date(checkIn);
-      checkOut.setMonth(checkOut.getMonth() + 1);
+      checkOut.setFullYear(checkOut.getFullYear() + 5);
     } else {
       checkOut = new Date(checkIn);
       checkOut.setDate(checkOut.getDate() + 1);
@@ -921,13 +926,13 @@ router.post('/internal/bookings', authenticateUser, requireRoles(['admin', 'cate
     
     const [result] = await sequelize.query(`
       INSERT INTO bookings (
-        id, room_id, room_id_old, user_id, owner_id, check_in, check_out, 
+        id, room_id, user_id, owner_id, check_in, check_out, 
         guests, total_amount, paid_amount, status, payment_status,
         booking_type, booking_source,
         special_requests, contact_info,
         created_at, updated_at
       ) VALUES (
-        $1, $2, $2, $3, $4, $5, $6, 
+        $1, $2, $3, $4, $5, $6, 
         $7, $8, $9, $10, $11,
         $12, $13,
         $14, $15,
@@ -954,7 +959,8 @@ router.post('/internal/bookings', authenticateUser, requireRoles(['admin', 'cate
           phone: bookingData.guestPhone || '',
           email: bookingData.guestEmail || '',
           bedNumber: bedNumber,
-          bookingType: bookingType
+          bookingType: bookingType,
+          isOpenEnded: isOpenEnded
         })
       ]
     });

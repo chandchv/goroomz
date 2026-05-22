@@ -259,8 +259,13 @@ const PropertyDetailPage = () => {
   return (
     <>
       <Helmet>
-        <title>{property.title} - GoRoomz</title>
-        <meta name="description" content={property.description} />
+        <title>{property.title || property.name} - {property.location?.area || property.location?.city || 'Bangalore'} | GoRoomz</title>
+        <meta name="description" content={`${property.title || property.name} in ${property.location?.area || ''}, ${property.location?.city || 'Bangalore'}. ${property.description?.slice(0, 120) || 'Verified accommodation with amenities.'} Book on GoRoomz.`} />
+        <link rel="canonical" href={`https://goroomz.in/property/${property.slug || roomId}`} />
+        <meta property="og:title" content={`${property.title || property.name} | GoRoomz`} />
+        <meta property="og:description" content={property.description?.slice(0, 160) || `Accommodation in ${property.location?.city || 'Bangalore'}`} />
+        <meta property="og:type" content="place" />
+        {property.images?.[0] && <meta property="og:image" content={getImageUrl(property.images[0])} />}
       </Helmet>
 
       <div className="min-h-screen bg-gray-50">

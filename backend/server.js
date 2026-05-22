@@ -59,7 +59,12 @@ const defaultOrigins = [
   'http://127.0.0.1:5173',
   'https://goroomz.in',
   'https://www.goroomz.in',
-  'https://admin.goroomz.in'
+  'https://admin.goroomz.in',
+  // Capacitor mobile app origins
+  'https://localhost',
+  'capacitor://localhost',
+  'ionic://localhost',
+  'http://localhost'
 ];
 
 const envOrigins = process.env.FRONTEND_URLS

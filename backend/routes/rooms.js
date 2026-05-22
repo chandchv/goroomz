@@ -172,8 +172,8 @@ router.get('/pending', protect, authorize('admin'), async (req, res) => {
 
 // @desc    Get owner's rooms
 // @route   GET /api/rooms/owner/my-rooms
-// @access  Private (Owner/Admin)
-router.get('/owner/my-rooms', protect, authorize('owner', 'admin'), async (req, res) => {
+// @access  Private (Owner/Admin/Superuser)
+router.get('/owner/my-rooms', protect, authorize('owner', 'admin', 'superuser', 'category_owner'), async (req, res) => {
   try {
     const rooms = await Room.findAll({
       where: { 
@@ -203,8 +203,8 @@ router.get('/owner/my-rooms', protect, authorize('owner', 'admin'), async (req, 
 
 // @desc    Get owner statistics
 // @route   GET /api/rooms/owner/stats
-// @access  Private (Owner/Admin)
-router.get('/owner/stats', protect, authorize('owner', 'admin'), async (req, res) => {
+// @access  Private (Owner/Admin/Superuser)
+router.get('/owner/stats', protect, authorize('owner', 'admin', 'superuser', 'category_owner'), async (req, res) => {
   try {
     const totalProperties = await Room.count({ where: { ownerId: req.user.id } });
     const activeProperties = await Room.count({ 
@@ -320,8 +320,8 @@ router.get('/:id', validateObjectId('id'), handleValidationErrors, async (req, r
 
 // @desc    Create new room
 // @route   POST /api/rooms
-// @access  Private (Owner/Admin)
-router.post('/', protect, authorize('owner', 'admin'), validateRoom, handleValidationErrors, async (req, res) => {
+// @access  Private (Owner/Admin/Superuser)
+router.post('/', protect, authorize('owner', 'admin', 'superuser', 'category_owner'), validateRoom, handleValidationErrors, async (req, res) => {
   try {
     // Handle legacy location format (convert string to object if needed)
     let locationData = req.body.location;
@@ -410,8 +410,8 @@ router.post('/', protect, authorize('owner', 'admin'), validateRoom, handleValid
 
 // @desc    Update room
 // @route   PUT /api/rooms/:id
-// @access  Private (Owner/Admin)
-router.put('/:id', protect, authorize('owner', 'admin'), validateObjectId('id'), handleValidationErrors, async (req, res) => {
+// @access  Private (Owner/Admin/Superuser)
+router.put('/:id', protect, authorize('owner', 'admin', 'superuser', 'category_owner'), validateObjectId('id'), handleValidationErrors, async (req, res) => {
   try {
     let room = await Room.findByPk(req.params.id);
 
@@ -461,8 +461,8 @@ router.put('/:id', protect, authorize('owner', 'admin'), validateObjectId('id'),
 
 // @desc    Delete room
 // @route   DELETE /api/rooms/:id
-// @access  Private (Owner/Admin)
-router.delete('/:id', protect, authorize('owner', 'admin'), validateObjectId('id'), handleValidationErrors, async (req, res) => {
+// @access  Private (Owner/Admin/Superuser)
+router.delete('/:id', protect, authorize('owner', 'admin', 'superuser', 'category_owner'), validateObjectId('id'), handleValidationErrors, async (req, res) => {
   try {
     const room = await Room.findByPk(req.params.id);
 

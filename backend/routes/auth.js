@@ -38,13 +38,15 @@ router.post('/register', validateUserRegistration, handleValidationErrors, async
     const allowedRoles = ['user', 'owner'];
     const userRole = allowedRoles.includes(role) ? role : 'user';
 
-    // Create user
+    // Create user — auto-activated
     const user = await User.create({
       name,
       email: normalizedEmail,
       password,
       phone,
-      role: userRole
+      role: userRole,
+      isActive: true,
+      isVerified: true
     });
 
     // Generate token

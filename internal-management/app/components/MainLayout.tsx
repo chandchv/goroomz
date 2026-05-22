@@ -49,7 +49,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
       <SyncStatusBar />
       <div className="flex">
         <SidebarComponent isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <main className="flex-1 p-3 sm:p-4 md:p-6 lg:p-8">
+        <main className="flex-1 min-w-0 overflow-x-hidden p-3 sm:p-4 md:p-6 lg:p-8">
           {children}
         </main>
       </div>

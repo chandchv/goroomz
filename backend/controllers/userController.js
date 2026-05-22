@@ -53,6 +53,7 @@ exports.firebaseSignIn = async (req, res) => {
           name: userName,
           avatar: photoURL,
           isVerified: true, // All Firebase sign-ins are considered verified
+          isActive: true,   // Auto-activate accounts created via Google/Firebase
         });
       } catch (createError) {
         if (createError instanceof UniqueConstraintError && normalizedEmail) {
@@ -90,6 +91,28 @@ exports.firebaseSignIn = async (req, res) => {
     if (photoURL && user.avatar !== photoURL) {
       user.avatar = photoURL;
       updated = true;
+    }
+
+    // Auto-activate and verify Firebase users
+    if (!user.isActive) {
+      user.is_active = true;
+      updated = true;
+    }
+    if (!user.isVerified) {
+      user.is_verified = true;
+      updated = true;
+    }
+
+    // Auto-upgrade to owner if they own properties
+    if (user.role === 'user') {
+      try {
+        const { Property } = require('../models');
+        const ownedProperty = await Property.findOne({ where: { ownerId: user.id } });
+        if (ownedProperty) {
+          user.role = 'owner';
+          updated = true;
+        }
+      } catch (_) {}
     }
 
     if (updated) {

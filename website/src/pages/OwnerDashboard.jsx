@@ -36,6 +36,7 @@ import {
 import { motion } from 'framer-motion';
 import PropertyListingWizard from '@/components/PropertyListingWizard';
 import EditRoomModal from '@/components/EditRoomModal';
+import RoomManagement from '@/components/RoomManagement';
 import bookingService from '@/services/bookingService';
 import leadService from '@/services/leadService';
 import apiService from '@/services/api';
@@ -509,6 +510,16 @@ const OwnerDashboard = () => {
             🏠 My Properties ({properties.length})
           </button>
           <button
+            onClick={() => setActiveTab('rooms')}
+            className={`flex-1 min-w-fit py-3 px-4 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'rooms' 
+                ? 'bg-white text-purple-600 shadow-sm' 
+                : 'text-gray-600 hover:text-purple-600'
+            }`}
+          >
+            🛏️ Rooms
+          </button>
+          <button
             onClick={() => setActiveTab('bookings')}
             className={`flex-1 min-w-fit py-3 px-4 rounded-md text-sm font-medium transition-colors ${
               activeTab === 'bookings' 
@@ -810,6 +821,11 @@ const OwnerDashboard = () => {
               )}
             </div>
           </div>
+        )}
+
+        {/* Rooms Tab */}
+        {activeTab === 'rooms' && (
+          <RoomManagement properties={properties} />
         )}
 
         {/* Bookings Tab */}

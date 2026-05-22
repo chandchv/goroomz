@@ -271,14 +271,15 @@ router.post('/category-owner-signup', async (req, res) => {
       });
     }
 
-    // Create as property owner (not category_owner)
+    // Create as property owner — auto-activated, no admin approval needed
     const user = await User.create({
       name,
       email,
       password,
       phone,
       role: 'owner',
-      isVerified: false
+      isVerified: true,
+      isActive: true
     });
 
     res.status(201).json({
@@ -322,13 +323,15 @@ router.post('/owner-signup', async (req, res) => {
       return res.status(400).json({ success: false, message: 'User already exists with this email' });
     }
 
+    // Create owner account — auto-activated, no admin approval needed
     const user = await User.create({
       name,
       email,
       password,
       phone,
       role: 'owner',
-      isVerified: false
+      isVerified: true,
+      isActive: true
     });
 
     // Generate token so user is logged in immediately

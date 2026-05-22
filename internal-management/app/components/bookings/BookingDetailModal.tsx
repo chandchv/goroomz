@@ -73,6 +73,9 @@ const BookingDetailModal: React.FC<BookingDetailModalProps> = ({ booking, onClos
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
+    const twoYearsFromNow = new Date();
+    twoYearsFromNow.setFullYear(twoYearsFromNow.getFullYear() + 2);
+    if (date > twoYearsFromNow) return 'Open-ended (monthly tenancy)';
     return date.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',

@@ -579,7 +579,12 @@ export default function CheckInPage() {
               <div>
                 <p className="text-sm text-gray-600">Check-out Date</p>
                 <p className="font-medium text-gray-900">
-                  {new Date(booking.checkOut).toLocaleDateString()}
+                  {(() => {
+                    const d = new Date(booking.checkOut);
+                    const twoYears = new Date();
+                    twoYears.setFullYear(twoYears.getFullYear() + 2);
+                    return d > twoYears ? 'Open-ended' : d.toLocaleDateString();
+                  })()}
                 </p>
               </div>
               <div>

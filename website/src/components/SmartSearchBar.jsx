@@ -113,9 +113,11 @@ const SmartSearchBar = ({ onSearch, placeholder = "Search by city code, location
             type: 'property',
             name: property.name || property.title,
             id: property.id,
+            slug: property.slug,
+            propertyType: property.type,
             location: property.location?.city || property.location?.address || '',
             displayText: property.name || property.title,
-            subText: property.location?.city || 'Property',
+            subText: property.location?.area || property.location?.city || 'Property',
             icon: 'building'
           }));
           
@@ -220,10 +222,15 @@ const SmartSearchBar = ({ onSearch, placeholder = "Search by city code, location
       setShowSuggestions(false);
       navigate(`/search?q=${encodeURIComponent(suggestion.query)}`);
     } else if (suggestion.type === 'property') {
-      // Direct property navigation
+      // Direct property navigation using slug
       setQuery(suggestion.name);
       setShowSuggestions(false);
-      navigate(`/property/${suggestion.id}`);
+      const isPG = (suggestion.propertyType || '').toLowerCase() === 'pg' || (suggestion.propertyType || '').toLowerCase() === 'hostel';
+      if (isPG && suggestion.slug) {
+        navigate(`/pg/${suggestion.slug}`);
+      } else {
+        navigate(`/property/${suggestion.slug || suggestion.id}`);
+      }
     } else {
       // Fallback to text search
       setQuery(suggestion.displayText || suggestion.name);
@@ -263,7 +270,7 @@ const SmartSearchBar = ({ onSearch, placeholder = "Search by city code, location
           onKeyDown={handleKeyDown}
           onFocus={() => setShowSuggestions(true)}
           placeholder={placeholder}
-          className="w-full pl-12 pr-24 py-4 rounded-2xl border-2 border-gray-200 focus:border-purple-600 focus:ring-4 focus:ring-purple-100 outline-none transition-all text-lg"
+          className="w-full pl-12 pr-24 py-4 rounded-2xl border-2 border-gray-200 focus:border-purple-600 focus:ring-4 focus:ring-purple-100 outline-none transition-all text-lg bg-white text-gray-900 placeholder-gray-400"
         />
 
         {/* Clear Button */}

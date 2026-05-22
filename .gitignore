@@ -19,6 +19,7 @@ website/.env
 internal-management/.env
 !website/.env.production
 !internal-management/.env.production
+goroomz-4ac3c-firebase-adminsdk-fbsvc-5ff6d76431.json
 
 # Database dumps and backups
 backend/backups/

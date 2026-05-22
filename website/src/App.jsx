@@ -13,6 +13,7 @@ import SignupPage from '@/pages/SignupPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import PGListingPage from '@/pages/PGListingPage';
 import PGDetailPage from '@/pages/PGDetailPage';
+import AreaPage from '@/pages/AreaPage';
 import PrivacyPolicyPage from '@/pages/PrivacyPolicyPage';
 import TermsOfServicePage from '@/pages/TermsOfServicePage';
 import AboutPage from '@/pages/AboutPage';
@@ -34,6 +35,7 @@ function App() {
             <Route path="/property/:roomId" element={<PropertyDetailPage />} />
             <Route path="/search" element={<SearchResultsPage />} />
             <Route path="/pgs" element={<PGListingPage />} />
+            <Route path="/pgs-in/:areaSlug" element={<AreaPage />} />
             <Route path="/pg/:identifier" element={<PGDetailPage />} />
             <Route path="/privacy" element={<PrivacyPolicyPage />} />
             <Route path="/terms" element={<TermsOfServicePage />} />

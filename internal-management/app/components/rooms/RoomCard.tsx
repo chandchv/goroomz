@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
+import Icon from '@mdi/react';
+import { mdiBed } from '@mdi/js';
 import type { Room } from '../../services/roomService';
 import { useLongPress } from '../../hooks/useLongPress';
 
 interface RoomCardProps {
   room: Room;
   onClick: (room: Room) => void;
+  onEdit?: (room: Room) => void;
+  onDelete?: (room: Room) => void;
+  onStatusChange?: (room: Room, status: string) => void;
   onLongPress?: (room: Room) => void;
 }
 
-const RoomCard: React.FC<RoomCardProps> = ({ room, onClick, onLongPress }) => {
+const RoomCard: React.FC<RoomCardProps> = ({ room, onClick, onEdit, onDelete, onStatusChange, onLongPress }) => {
   const [showContextMenu, setShowContextMenu] = useState(false);
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
 
   const longPressHandlers = useLongPress({
     onLongPress: () => {
@@ -112,18 +118,81 @@ const RoomCard: React.FC<RoomCardProps> = ({ room, onClick, onLongPress }) => {
         </span>
       </div>
 
-      {/* PG Sharing Info */}
+      {/* PG Sharing Info with Bed Icons */}
       {room.sharingType && room.totalBeds && (
         <div className="text-xs mt-2 pt-2 border-t border-current/20">
-          <div className="flex justify-between">
-            <span>Beds:</span>
+          <div className="flex justify-between mb-1">
+            <span>{room.sharingType.replace('_', ' ')} sharing</span>
             <span className="font-semibold">
               {room.occupiedBeds || 0}/{room.totalBeds}
             </span>
           </div>
-          <div className="text-xs opacity-75 mt-1">
-            {room.sharingType.replace('_', '-')}
+          {/* Bed Icons - Red=Occupied, Green=Vacant */}
+          <div className="flex flex-wrap gap-1 mt-1">
+            {Array.from({ length: room.totalBeds }).map((_, i) => (
+              <Icon
+                key={i}
+                path={mdiBed}
+                size={0.9}
+                color={i < (room.occupiedBeds || 0) ? '#ef4444' : '#22c55e'}
+                title={i < (room.occupiedBeds || 0) ? 'Occupied' : 'Vacant'}
+              />
+            ))}
           </div>
+        </div>
+      )}
+
+      {/* Edit/Delete Buttons */}
+      {(onEdit || onDelete || onStatusChange) && (
+        <div className="flex gap-1 mt-2 pt-2 border-t border-current/20">
+          {onEdit && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(room); }}
+              className="flex-1 text-xs px-2 py-1 bg-white/80 hover:bg-white text-blue-700 rounded border border-blue-200 font-medium transition-colors"
+            >
+              ✏️ Edit
+            </button>
+          )}
+          {onStatusChange && (
+            <div className="relative flex-1">
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowStatusMenu(!showStatusMenu); }}
+                className="w-full text-xs px-2 py-1 bg-white/80 hover:bg-white text-gray-700 rounded border border-gray-200 font-medium transition-colors"
+              >
+                🔄 Status
+              </button>
+              {showStatusMenu && (
+                <div className="absolute bottom-full left-0 mb-1 w-36 bg-white rounded-lg shadow-lg border border-gray-200 z-20 overflow-hidden">
+                  {[
+                    { value: 'vacant_clean', label: 'Vacant/Clean', color: 'text-green-700 hover:bg-green-50' },
+                    { value: 'vacant_dirty', label: 'Vacant/Dirty', color: 'text-yellow-700 hover:bg-yellow-50' },
+                    { value: 'occupied', label: 'Occupied', color: 'text-red-700 hover:bg-red-50' },
+                    { value: 'maintenance', label: 'Maintenance', color: 'text-gray-700 hover:bg-gray-50' },
+                  ].map(s => (
+                    <button
+                      key={s.value}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onStatusChange(room, s.value);
+                        setShowStatusMenu(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 text-xs font-medium ${s.color} ${room.currentStatus === s.value ? 'bg-blue-50 font-bold' : ''}`}
+                    >
+                      {room.currentStatus === s.value ? '✓ ' : ''}{s.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {onDelete && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete(room); }}
+              className="text-xs px-2 py-1 bg-white/80 hover:bg-white text-red-600 rounded border border-red-200 font-medium transition-colors"
+            >
+              🗑️
+            </button>
+          )}
         </div>
       )}
 

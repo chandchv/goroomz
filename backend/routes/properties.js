@@ -471,6 +471,81 @@ router.get('/areas', async (req, res) => {
 });
 
 /**
+ * GET /api/properties/nearby
+ * Get properties near a given lat/lng, sorted by distance
+ * Query: lat, lng, radius (km, default 10), limit (default 20), type
+ */
+router.get('/nearby', async (req, res) => {
+  try {
+    const { lat, lng, radius = 10, limit = 20, type } = req.query;
+
+    if (!lat || !lng) {
+      return res.status(400).json({ success: false, message: 'lat and lng are required' });
+    }
+
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lng);
+    const radiusKm = parseFloat(radius);
+    const maxResults = Math.min(parseInt(limit), 50);
+
+    const { sequelize } = require('../models');
+
+    // Haversine formula in SQL to calculate distance
+    let typeFilter = '';
+    if (type) typeFilter = `AND type = '${type.replace(/'/g, "''")}'`;
+
+    const [properties] = await sequelize.query(`
+      SELECT *,
+        (6371 * acos(
+          cos(radians(:lat)) * cos(radians((location->'coordinates'->>'latitude')::float))
+          * cos(radians((location->'coordinates'->>'longitude')::float) - radians(:lng))
+          + sin(radians(:lat)) * sin(radians((location->'coordinates'->>'latitude')::float))
+        )) AS distance
+      FROM properties
+      WHERE is_active = true
+        AND approval_status = 'approved'
+        AND location->'coordinates' IS NOT NULL
+        AND location->>'coordinates' != 'null'
+        AND (location->'coordinates'->>'latitude') IS NOT NULL
+        ${typeFilter}
+      HAVING (6371 * acos(
+          cos(radians(:lat)) * cos(radians((location->'coordinates'->>'latitude')::float))
+          * cos(radians((location->'coordinates'->>'longitude')::float) - radians(:lng))
+          + sin(radians(:lat)) * sin(radians((location->'coordinates'->>'latitude')::float))
+        )) <= :radius
+      ORDER BY distance ASC
+      LIMIT :limit
+    `, {
+      replacements: { lat: latitude, lng: longitude, radius: radiusKm, limit: maxResults }
+    });
+
+    res.json({
+      success: true,
+      data: properties.map(p => ({
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        type: p.type,
+        description: p.description,
+        location: typeof p.location === 'string' ? JSON.parse(p.location) : p.location,
+        contactInfo: typeof p.contact_info === 'string' ? JSON.parse(p.contact_info) : p.contact_info,
+        amenities: p.amenities || [],
+        images: typeof p.images === 'string' ? JSON.parse(p.images) : (p.images || []),
+        rating: typeof p.rating === 'string' ? JSON.parse(p.rating) : p.rating,
+        metadata: typeof p.metadata === 'string' ? JSON.parse(p.metadata) : p.metadata,
+        isFeatured: p.is_featured,
+        distance: Math.round(p.distance * 10) / 10, // km, 1 decimal
+        price: (typeof p.metadata === 'string' ? JSON.parse(p.metadata) : p.metadata)?.pgOptions?.basePrice || null
+      })),
+      pagination: { total: properties.length, radius: radiusKm }
+    });
+  } catch (error) {
+    console.error('Error fetching nearby properties:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch nearby properties' });
+  }
+});
+
+/**
  * GET /api/properties/:identifier
  * Get single property details by UUID or slug
  */

@@ -5,9 +5,12 @@ import type { Room } from '../../services/roomService';
 interface RoomGridProps {
   rooms: Room[];
   onRoomClick: (room: Room) => void;
+  onEditRoom?: (room: Room) => void;
+  onDeleteRoom?: (room: Room) => void;
+  onStatusChange?: (room: Room, status: string) => void;
 }
 
-const RoomGrid: React.FC<RoomGridProps> = ({ rooms, onRoomClick }) => {
+const RoomGrid: React.FC<RoomGridProps> = ({ rooms, onRoomClick, onEditRoom, onDeleteRoom, onStatusChange }) => {
   if (rooms.length === 0) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-500">
@@ -22,7 +25,7 @@ const RoomGrid: React.FC<RoomGridProps> = ({ rooms, onRoomClick }) => {
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
       {rooms.map((room) => (
-        <RoomCard key={room.id} room={room} onClick={onRoomClick} />
+        <RoomCard key={room.id} room={room} onClick={onRoomClick} onEdit={onEditRoom} onDelete={onDeleteRoom} onStatusChange={onStatusChange} />
       ))}
     </div>
   );

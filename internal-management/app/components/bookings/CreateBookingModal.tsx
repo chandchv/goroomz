@@ -41,6 +41,7 @@ const CreateBookingModal: React.FC<CreateBookingModalProps> = ({ onClose, onSucc
   const [adjustmentType, setAdjustmentType] = useState<'discount' | 'surcharge'>('discount');
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'partial' | 'paid'>('pending');
   const [paidAmount, setPaidAmount] = useState('');
+  const [isHistorical, setIsHistorical] = useState(false);
 
   // Fetch rooms on mount or when propertyId changes
   useEffect(() => {
@@ -277,7 +278,9 @@ const CreateBookingModal: React.FC<CreateBookingModalProps> = ({ onClose, onSucc
         paymentStatus,
         paidAmount: paidAmount ? parseFloat(paidAmount) : undefined,
         depositAmount: bookingType === 'monthly' && depositAmount ? parseFloat(depositAmount) : undefined,
-      };
+        bookingType,
+        isHistorical,
+      } as any;
 
       await bookingService.createBooking(bookingData);
       onSuccess();
@@ -493,7 +496,33 @@ const CreateBookingModal: React.FC<CreateBookingModalProps> = ({ onClose, onSucc
 
           {/* Booking Dates */}
           <div className="bg-gray-50 rounded-lg p-4 space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">Booking Dates</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Booking Dates</h3>
+              {/* Historical booking toggle */}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <span className="text-xs text-amber-700 font-medium">Historical booking</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsHistorical(!isHistorical);
+                    if (!isHistorical) setCheckIn('');
+                    else setCheckIn(new Date().toISOString().split('T')[0]);
+                  }}
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    isHistorical ? 'bg-amber-500' : 'bg-gray-300'
+                  }`}
+                >
+                  <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                    isHistorical ? 'translate-x-5' : 'translate-x-0.5'
+                  }`} />
+                </button>
+              </label>
+            </div>
+            {isHistorical && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                ⏰ Historical mode: you can enter a past check-in date for bookings that were not registered at the time.
+              </div>
+            )}
             
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -504,9 +533,13 @@ const CreateBookingModal: React.FC<CreateBookingModalProps> = ({ onClose, onSucc
                 value={checkIn}
                 onChange={(e) => setCheckIn(e.target.value)}
                 required
-                min={new Date().toISOString().split('T')[0]}
+                max={isHistorical ? new Date().toISOString().split('T')[0] : undefined}
+                min={isHistorical ? undefined : new Date().toISOString().split('T')[0]}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
               />
+              {isHistorical && (
+                <p className="text-xs text-amber-600 mt-1">Past dates allowed in historical mode</p>
+              )}
             </div>
 
             {bookingType === 'daily' && (

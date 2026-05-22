@@ -66,21 +66,70 @@ function getImg(p) {
 const HomePage = () => {
   const navigate = useNavigate();
   const [properties, setProperties] = useState([]);
+  const [nearbyProperties, setNearbyProperties] = useState([]);
+  const [userLocation, setUserLocation] = useState(null);
   const [stats, setStats] = useState({ total: 0, topAreas: [] });
   const [activeFilter, setActiveFilter] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [locationLabel, setLocationLabel] = useState('');
 
-  // Load initial data
+  // Request user location and load nearby properties
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setUserLocation({ lat: latitude, lng: longitude });
+          // Fetch nearby properties
+          propertyService.getNearbyProperties(latitude, longitude, { limit: 12, radius: 15 })
+            .then(res => {
+              if (res.success && res.data?.length > 0) {
+                setNearbyProperties(res.data);
+                // Use the area of the first result as location label
+                const firstArea = res.data[0]?.location?.area;
+                setLocationLabel(firstArea || 'your area');
+              }
+            })
+            .catch(() => {});
+        },
+        () => { /* Permission denied or error — just show featured */ },
+        { timeout: 5000, maximumAge: 300000 }
+      );
+    }
+  }, []);
+
+  // Load featured data
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
       try {
-        const [featuredRes, statsRes] = await Promise.all([
+        const [featuredRes, statsRes, areasRes] = await Promise.all([
           propertyService.getFeaturedProperties().catch(() => ({ success: false, data: [] })),
           apiService.get('/properties/stats', { includeAuth: false }).catch(() => ({ success: false, data: { total: 3000, topAreas: [] } })),
+          propertyService.getAreas().catch(() => ({ success: false, data: [] })),
         ]);
-        if (featuredRes.success) setProperties(featuredRes.data || []);
+
+        let propertyList = featuredRes.success ? (featuredRes.data || []) : [];
+
+        // If featured properties are too few, load more regular properties
+        if (propertyList.length < 8) {
+          try {
+            const moreRes = await propertyService.getProperties({ limit: 12, page: 1 });
+            if (moreRes.success && moreRes.data) {
+              // Merge: keep featured first, then add non-duplicates
+              const existingIds = new Set(propertyList.map(p => p.id));
+              const additional = moreRes.data.filter(p => !existingIds.has(p.id));
+              propertyList = [...propertyList, ...additional].slice(0, 12);
+            }
+          } catch (_) {}
+        }
+
+        setProperties(propertyList);
         if (statsRes.success) setStats(statsRes.data);
+        if (areasRes.success && areasRes.data) {
+          // Store areas in stats for the area section
+          setStats(prev => ({ ...prev, areas: areasRes.data }));
+        }
       } catch (e) {
         console.error('Home load error:', e);
       } finally {
@@ -135,7 +184,23 @@ const HomePage = () => {
     <>
       <Helmet>
         <title>GoRoomz — Find Verified PGs & Rooms in Bangalore | Zero Brokerage</title>
-        <meta name="description" content={`Browse ${totalCount}+ verified PGs, hostels, and rooms in Bangalore. Direct owner contact, zero brokerage. Find your perfect stay with GoRoomz.`} />
+        <meta name="description" content={`Browse ${totalCount}+ verified PGs, hostels, and rooms in Bangalore. Direct owner contact, zero brokerage. Boys & Girls PG with WiFi, food, AC in Koramangala, HSR Layout, Whitefield & more.`} />
+        <meta name="keywords" content="PG in Bangalore, paying guest near me, PG accommodation Bangalore, boys PG, girls PG, PG with food, hostel Bangalore, rooms for rent, zero brokerage PG, GoRoomz" />
+        <link rel="canonical" href="https://goroomz.in/" />
+        <meta property="og:title" content="GoRoomz — Find Verified PGs & Rooms in Bangalore | Zero Brokerage" />
+        <meta property="og:description" content={`Browse ${totalCount}+ verified PGs in Bangalore. Zero brokerage, direct owner contact.`} />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://goroomz.in/" />
+        <meta property="og:image" content="https://goroomz.in/logo-512.png" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          "name": "GoRoomz - Find Verified PGs & Rooms in Bangalore",
+          "description": `Browse ${totalCount}+ verified PGs, hostels, and rooms in Bangalore with zero brokerage.`,
+          "url": "https://goroomz.in/",
+          "isPartOf": { "@type": "WebSite", "name": "GoRoomz", "url": "https://goroomz.in" }
+        })}</script>
       </Helmet>
 
       {/* ═══════ SECTION 1 — HERO ═══════ */}
@@ -220,12 +285,61 @@ const HomePage = () => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => navigate('/search?q=')}
+              onClick={() => navigate('/pgs')}
               className="hidden sm:flex items-center gap-1 text-purple-600 border-purple-200 hover:bg-purple-50"
             >
               View All <ArrowRight className="w-4 h-4" />
             </Button>
           </div>
+
+          {/* Nearby Properties Section */}
+          {nearbyProperties.length > 0 && !activeFilter && (
+            <div className="mb-8">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    📍 PGs Near {locationLabel || 'You'}
+                  </h2>
+                  <p className="text-sm text-gray-500">Based on your current location</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {nearbyProperties.slice(0, 8).map((p, i) => {
+                  const price = p.price || p.metadata?.pgOptions?.basePrice || 0;
+                  const loc = p.location?.area || p.location?.city || '';
+                  const img = p.images?.[0];
+                  const imgUrl = img ? (typeof img === 'string' ? img : img.url) : null;
+                  const finalImgUrl = imgUrl && imgUrl.includes('maps.googleapis.com') && !imgUrl.includes('key=')
+                    ? imgUrl + '&key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8' : imgUrl;
+                  return (
+                    <div key={p.id} onClick={() => navigate(p.type === 'pg' && p.slug ? `/pg/${p.slug}` : `/property/${p.id}`)}
+                      className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-gray-100 group">
+                      <div className="relative h-44 bg-gray-100 overflow-hidden">
+                        {finalImgUrl ? (
+                          <img src={finalImgUrl} alt={p.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=400&q=60'; }} />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-purple-50 to-pink-50"><span className="text-4xl">🏠</span></div>
+                        )}
+                        {p.distance && (
+                          <span className="absolute top-2 left-2 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-md text-xs font-semibold text-gray-700">
+                            📍 {p.distance} km away
+                          </span>
+                        )}
+                      </div>
+                      <div className="p-4">
+                        <h3 className="font-bold text-gray-900 text-sm mb-1 line-clamp-1">{p.name}</h3>
+                        <p className="text-xs text-gray-500 mb-2">{loc}</p>
+                        {price > 0 && (
+                          <span className="text-purple-600 font-bold text-sm">₹{price.toLocaleString()}<span className="text-gray-400 font-normal text-xs"> /month</span></span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Loading state */}
           {isLoading ? (
@@ -342,14 +456,14 @@ const HomePage = () => {
               <Search className="w-12 h-12 text-gray-300 mx-auto mb-3" />
               <h3 className="text-lg font-bold text-gray-900 mb-1">No properties found</h3>
               <p className="text-gray-500 text-sm mb-4">Try a different filter or search above</p>
-              <Button onClick={() => { setActiveFilter(null); navigate('/search?q='); }}>Browse All PGs</Button>
+              <Button onClick={() => { setActiveFilter(null); navigate('/pgs'); }}>Browse All PGs</Button>
             </div>
           )}
 
           {/* Mobile View All */}
           {properties.length > 0 && (
             <div className="sm:hidden text-center mt-6">
-              <Button variant="outline" onClick={() => navigate('/search?q=')} className="text-purple-600 border-purple-200">
+              <Button variant="outline" onClick={() => navigate('/pgs')} className="text-purple-600 border-purple-200">
                 View All {totalCount}+ PGs <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             </div>
@@ -414,14 +528,14 @@ const HomePage = () => {
           </div>
 
           {/* Top areas */}
-          {stats.topAreas?.length > 0 && (
+          {(stats.areas?.length > 0 || stats.topAreas?.length > 0) && (
             <div className="mt-10 text-center">
               <p className="text-sm text-gray-500 mb-3">Popular areas</p>
               <div className="flex flex-wrap justify-center gap-2">
-                {stats.topAreas.slice(0, 8).map(a => (
+                {(stats.areas || stats.topAreas || []).slice(0, 12).map(a => (
                   <Link
                     key={a.area}
-                    to={`/search?q=${encodeURIComponent(a.area)}`}
+                    to={`/pgs-in/${a.area.toLowerCase().replace(/\s+/g, '-')}`}
                     className="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-700 hover:border-purple-300 hover:text-purple-600 transition"
                   >
                     {a.area} <span className="text-gray-400">({a.count})</span>
@@ -433,7 +547,54 @@ const HomePage = () => {
         </div>
       </section>
 
-      {/* ═══════ SECTION 6 — OWNER CTA ═══════ */}
+      {/* ═══════ SECTION 6 — AREA LINKS (SEO) ═══════ */}
+      <section className="bg-white py-12 md:py-16 border-t">
+        <div className="container mx-auto px-4">
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900 text-center mb-3">
+            Find PGs by Area in Bangalore
+          </h2>
+          <p className="text-gray-500 text-center mb-8 max-w-2xl mx-auto">
+            Browse verified PG accommodations across popular neighborhoods in Bangalore
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 max-w-5xl mx-auto">
+            {[
+              { name: 'Koramangala', slug: 'koramangala', count: '200+' },
+              { name: 'HSR Layout', slug: 'hsr-layout', count: '150+' },
+              { name: 'BTM Layout', slug: 'btm-layout', count: '180+' },
+              { name: 'Whitefield', slug: 'whitefield', count: '250+' },
+              { name: 'Electronic City', slug: 'electronic-city', count: '300+' },
+              { name: 'Marathahalli', slug: 'marathahalli', count: '120+' },
+              { name: 'Indiranagar', slug: 'indiranagar', count: '80+' },
+              { name: 'Jayanagar', slug: 'jayanagar', count: '100+' },
+              { name: 'JP Nagar', slug: 'jp-nagar', count: '90+' },
+              { name: 'Banashankari', slug: 'banashankari', count: '70+' },
+              { name: 'Hebbal', slug: 'hebbal', count: '60+' },
+              { name: 'Bellandur', slug: 'bellandur', count: '140+' },
+              { name: 'Sarjapur Road', slug: 'sarjapur-road', count: '110+' },
+              { name: 'Malleshwaram', slug: 'malleshwaram', count: '50+' },
+              { name: 'Rajajinagar', slug: 'rajajinagar', count: '45+' },
+            ].map(area => (
+              <Link
+                key={area.slug}
+                to={`/pgs-in/${area.slug}`}
+                className="flex flex-col items-center p-4 bg-gray-50 border border-gray-200 rounded-xl hover:border-purple-300 hover:bg-purple-50 transition group"
+              >
+                <span className="text-sm font-semibold text-gray-800 group-hover:text-purple-700 text-center">
+                  PGs in {area.name}
+                </span>
+                <span className="text-xs text-gray-400 mt-1">{area.count} PGs</span>
+              </Link>
+            ))}
+          </div>
+          <div className="text-center mt-6">
+            <Link to="/pgs" className="text-purple-600 text-sm font-medium hover:underline">
+              View all areas →
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══════ SECTION 7 — OWNER CTA ═══════ */}
       <section className="bg-white py-12 md:py-16">
         <div className="container mx-auto px-4">
           <div className="bg-gradient-to-br from-purple-600 to-purple-800 rounded-2xl p-8 md:p-12 text-white max-w-4xl mx-auto">

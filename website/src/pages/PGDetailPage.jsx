@@ -155,8 +155,8 @@ const PGDetailPage = () => {
 
   if (!property) return null;
 
-  const sharingPrices = property.pgOptions?.sharingPrices || property.metadata?.pgOptions?.sharingPrices || {};
-  const sharingDailyPrices = property.pgOptions?.sharingDailyPrices || property.metadata?.pgOptions?.sharingDailyPrices || {};
+  const sharingPrices = property.metadata?.pgOptions?.sharingPrices || property.pgOptions?.sharingPrices || {};
+  const sharingDailyPrices = property.metadata?.pgOptions?.sharingDailyPrices || property.pgOptions?.sharingDailyPrices || {};
   const lowestPrice = Math.min(...Object.values(sharingPrices).filter(p => p > 0), property.price || Infinity);
   const genderPref = property.metadata?.genderPreference;
   const genderLabel = genderPref === 'female' ? 'Ladies Only' : genderPref === 'male' ? 'Gents Only' : 'Co-ed';
@@ -168,7 +168,62 @@ const PGDetailPage = () => {
     <>
       <Helmet>
         <title>{property.name} - PG in {property.location?.area || property.location?.city || 'Bangalore'} | GoRoomz</title>
-        <meta name="description" content={property.description} />
+        <meta name="description" content={`${property.name} - ${genderLabel} PG in ${property.location?.area || ''}, ${property.location?.city || 'Bangalore'}. ${lowestPrice !== Infinity ? `Starting ₹${lowestPrice.toLocaleString()}/month.` : ''} ${(property.amenities || []).slice(0, 4).join(', ')}. Zero brokerage, direct owner contact.`} />
+        <meta name="keywords" content={`${property.name}, PG in ${property.location?.area || 'Bangalore'}, ${genderLabel} PG ${property.location?.area || ''}, paying guest ${property.location?.area || 'Bangalore'}, PG near ${property.location?.area || ''}`} />
+        <link rel="canonical" href={`https://goroomz.in/pg/${property.slug || identifier}`} />
+        <meta property="og:title" content={`${property.name} - ${genderLabel} PG in ${property.location?.area || 'Bangalore'} | GoRoomz`} />
+        <meta property="og:description" content={`${genderLabel} PG in ${property.location?.area || 'Bangalore'}. ${lowestPrice !== Infinity ? `From ₹${lowestPrice.toLocaleString()}/month.` : ''} Verified listing on GoRoomz.`} />
+        <meta property="og:type" content="place" />
+        <meta property="og:url" content={`https://goroomz.in/pg/${property.slug || identifier}`} />
+        {images.length > 0 && <meta property="og:image" content={getImgUrl(images[0])} />}
+        <meta name="twitter:card" content="summary_large_image" />
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "LodgingBusiness",
+          "name": property.name,
+          "description": property.description || `${genderLabel} PG accommodation in ${property.location?.area || 'Bangalore'}`,
+          "url": `https://goroomz.in/pg/${property.slug || identifier}`,
+          "image": images.length > 0 ? getImgUrl(images[0]) : undefined,
+          "address": {
+            "@type": "PostalAddress",
+            "streetAddress": property.location?.address || '',
+            "addressLocality": property.location?.city || 'Bangalore',
+            "addressRegion": property.location?.state || 'Karnataka',
+            "addressCountry": "IN"
+          },
+          ...(property.location?.coordinates?.latitude && {
+            "geo": {
+              "@type": "GeoCoordinates",
+              "latitude": property.location.coordinates.latitude,
+              "longitude": property.location.coordinates.longitude
+            }
+          }),
+          ...(lowestPrice !== Infinity && { "priceRange": `₹${lowestPrice.toLocaleString()}/month` }),
+          ...(property.rating?.average > 0 && {
+            "aggregateRating": {
+              "@type": "AggregateRating",
+              "ratingValue": property.rating.average,
+              "reviewCount": property.rating.count || 1,
+              "bestRating": 5
+            }
+          }),
+          "amenityFeature": (property.amenities || []).map(a => ({
+            "@type": "LocationFeatureSpecification",
+            "name": a,
+            "value": true
+          })),
+          ...(property.contactInfo?.phone && { "telephone": property.contactInfo.phone })
+        })}</script>
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "BreadcrumbList",
+          "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://goroomz.in/" },
+            { "@type": "ListItem", "position": 2, "name": "PGs in Bangalore", "item": "https://goroomz.in/pgs" },
+            ...(property.location?.area ? [{ "@type": "ListItem", "position": 3, "name": `PGs in ${property.location.area}`, "item": `https://goroomz.in/pgs-in/${property.location.area.toLowerCase().replace(/\s+/g, '-')}` }] : []),
+            { "@type": "ListItem", "position": property.location?.area ? 4 : 3, "name": property.name }
+          ]
+        })}</script>
       </Helmet>
 
       <div className="min-h-screen bg-white">

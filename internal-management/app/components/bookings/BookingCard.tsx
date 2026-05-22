@@ -58,6 +58,10 @@ const BookingCard: React.FC<BookingCardProps> = ({ booking, onClick }) => {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
+    // If date is more than 2 years in the future, it's an open-ended tenancy
+    const twoYearsFromNow = new Date();
+    twoYearsFromNow.setFullYear(twoYearsFromNow.getFullYear() + 2);
+    if (date > twoYearsFromNow) return 'Open-ended';
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
