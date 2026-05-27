@@ -1,6 +1,7 @@
 const express = require('express');
 const { sequelize, Booking, Room, User } = require('../../models');
 const { authenticateUser, requireRoles } = require('../utils/authMiddleware');
+const { upsertDepositForBooking, refundDepositForBooking, fetchDepositsForBookings } = require('../utils/depositUtils');
 const { Op } = require('sequelize');
 const router = express.Router();
 
@@ -104,6 +105,9 @@ router.get('/internal/bookings', authenticateUser, requireRoles(['admin', 'categ
       });
 
       // Transform bookings to match frontend expectations
+      const bookingIds = bookings.map((b) => b.id);
+      const depositsByBookingId = await fetchDepositsForBookings(sequelize, bookingIds);
+
       const transformedBookings = bookings.map(booking => {
         const roomTitle = booking.room?.title || '';
         // Use room_number field if available, otherwise extract from title
@@ -122,6 +126,21 @@ router.get('/internal/bookings', authenticateUser, requireRoles(['admin', 'categ
         
         // Calculate floor number from room number
         const floorNumber = Math.floor(parseInt(roomNumber) / 100) || 1;
+
+        // Get deposit for this booking
+        const deposit = depositsByBookingId[booking.id];
+        const securityDeposit = deposit ? {
+          amount: parseFloat(deposit.amount) || 0,
+          paymentMethod: deposit.payment_method || 'cash',
+          status: deposit.status || 'collected',
+          collectedDate: deposit.collected_date,
+        } : (contactInfo.depositAmount ? {
+          // Fall back to contactInfo if deposit table entry not found
+          amount: parseFloat(contactInfo.depositAmount) || 0,
+          paymentMethod: contactInfo.depositPaymentMethod || 'cash',
+          status: 'collected',
+          collectedDate: booking.createdAt,
+        } : null);
         
         return {
           id: booking.id,
@@ -138,6 +157,7 @@ router.get('/internal/bookings', authenticateUser, requireRoles(['admin', 'categ
           bookingType: booking.bookingType || 'daily',
           specialRequests: booking.specialRequests,
           contactInfo: contactInfo,
+          securityDeposit,
           createdAt: booking.createdAt,
           updatedAt: booking.updatedAt,
           // Nested user object - use contactInfo first, then fall back to user relation
@@ -358,10 +378,108 @@ router.get('/internal/bookings/:id', authenticateUser, requireRoles(['admin', 'c
   try {
     const { id } = req.params;
 
-    // No bookings exist yet - return 404
-    res.status(404).json({
-      success: false,
-      message: 'Booking not found'
+    const booking = await Booking.findByPk(id, {
+      include: [
+        {
+          model: Room,
+          as: 'room',
+          attributes: ['id', 'title', 'price', 'roomNumber', 'currentStatus', 'propertyDetails']
+        },
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email', 'phone']
+        }
+      ]
+    });
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    const depositsByBookingId = await fetchDepositsForBookings(sequelize, [booking.id]);
+    const deposit = depositsByBookingId[booking.id];
+
+    let contactInfo = booking.contactInfo || booking.contact_info || booking.dataValues?.contactInfo || booking.dataValues?.contact_info;
+    if (typeof contactInfo === 'string') {
+      try {
+        contactInfo = JSON.parse(contactInfo);
+      } catch (e) {
+        contactInfo = {};
+      }
+    }
+    contactInfo = contactInfo || {};
+
+    const roomTitle = booking.room?.title || '';
+    const roomNumber = booking.room?.roomNumber || booking.room?.room_number || roomTitle.replace('Room ', '') || 'N/A';
+    const floorNumber = Math.floor(parseInt(roomNumber) / 100) || 1;
+
+    const securityDeposit = deposit ? {
+      amount: parseFloat(deposit.amount) || 0,
+      paymentMethod: deposit.payment_method || 'cash',
+      status: deposit.status || 'collected',
+      collectedDate: deposit.collected_date,
+    } : (contactInfo.depositAmount ? {
+      amount: parseFloat(contactInfo.depositAmount) || 0,
+      paymentMethod: contactInfo.depositPaymentMethod || 'cash',
+      status: 'collected',
+      collectedDate: booking.createdAt,
+    } : null);
+
+    const securityDepositId = deposit ? deposit.id : (contactInfo.depositAmount ? booking.id : null);
+
+    const transformed = {
+      id: booking.id,
+      roomId: booking.roomId,
+      userId: booking.userId,
+      ownerId: booking.ownerId,
+      checkIn: booking.checkIn,
+      checkOut: booking.checkOut,
+      guests: booking.guests,
+      totalAmount: parseFloat(booking.totalAmount) || 0,
+      status: booking.status,
+      paymentStatus: booking.paymentStatus,
+      bookingSource: booking.bookingSource || 'offline',
+      bookingType: booking.bookingType || 'daily',
+      specialRequests: booking.specialRequests,
+      contactInfo: contactInfo,
+      securityDeposit,
+      securityDepositId,
+      createdAt: booking.createdAt,
+      updatedAt: booking.updatedAt,
+      user: {
+        id: booking.user?.id || booking.userId,
+        name: contactInfo.name || booking.user?.name || 'Guest',
+        email: contactInfo.email || booking.user?.email || '',
+        phone: contactInfo.phone || booking.user?.phone || ''
+      },
+      room: {
+        id: booking.room?.id || booking.roomId,
+        title: roomTitle,
+        roomNumber: roomNumber,
+        floorNumber: floorNumber,
+        currentStatus: booking.room?.currentStatus || booking.room?.current_status || booking.room?.propertyDetails?.currentStatus || 'vacant_clean',
+        sharingType: booking.room?.propertyDetails?.sharingType || null,
+        totalBeds: parseInt(booking.room?.propertyDetails?.totalBeds) || 1,
+      },
+      guestName: contactInfo.name || booking.user?.name || 'Guest',
+      guestPhone: contactInfo.phone || booking.user?.phone || '',
+      guestEmail: contactInfo.email || booking.user?.email || '',
+      roomNumber: roomNumber,
+      floorNumber: floorNumber,
+      checkInDate: booking.checkIn,
+      checkOutDate: booking.checkOut,
+      paidAmount: parseFloat(booking.paidAmount) || 0,
+      actualCheckInTime: booking.actualCheckInTime || null,
+      actualCheckOutTime: booking.actualCheckOutTime || null,
+    };
+
+    res.json({
+      success: true,
+      data: transformed
     });
   } catch (error) {
     console.error('Internal booking details error:', error);
@@ -577,6 +695,15 @@ router.post('/internal/bookings/:id/checkin', authenticateUser, requireRoles(['a
       });
     }
 
+    // Ensure booking is linked to property for deposit/property filters
+    if (!booking.propertyId && booking.room) {
+      const pd = booking.room.propertyDetails || booking.room.property_details || {};
+      const linkedPropertyId = pd.propertyId || pd.property_id;
+      if (linkedPropertyId) {
+        await booking.update({ propertyId: linkedPropertyId });
+      }
+    }
+
     // Check if booking can be checked in
     if (booking.actualCheckInTime) {
       return res.status(400).json({
@@ -594,11 +721,23 @@ router.post('/internal/bookings/:id/checkin', authenticateUser, requireRoles(['a
       specialRequests: notes ? (booking.specialRequests ? `${booking.specialRequests}\n\nCheck-in notes: ${notes}` : `Check-in notes: ${notes}`) : booking.specialRequests
     };
 
+    const depositAtCheckIn = securityDepositAmount ? parseFloat(securityDepositAmount) : 0;
+    let rentPaidAtCheckIn = paidAmount !== undefined ? parseFloat(paidAmount) : 0;
+    const bookingRentTotal = parseFloat(booking.totalAmount) || 0;
+
+    // Split lump-sum payment into rent + deposit when both provided in paidAmount
+    if (depositAtCheckIn > 0 && rentPaidAtCheckIn > bookingRentTotal) {
+      rentPaidAtCheckIn = Math.max(0, rentPaidAtCheckIn - depositAtCheckIn);
+    }
+
     if (paidAmount !== undefined) {
-      updateData.paidAmount = parseFloat(paidAmount) + parseFloat(booking.paidAmount || 0);
+      updateData.paidAmount = rentPaidAtCheckIn + parseFloat(booking.paidAmount || 0);
     }
     if (paymentStatus) {
       updateData.paymentStatus = paymentStatus;
+    } else if (paidAmount !== undefined) {
+      const totalPaid = updateData.paidAmount ?? parseFloat(booking.paidAmount || 0);
+      updateData.paymentStatus = totalPaid >= bookingRentTotal ? 'paid' : totalPaid > 0 ? 'partial' : 'pending';
     }
 
     await booking.update(updateData);
@@ -614,24 +753,16 @@ router.post('/internal/bookings/:id/checkin', authenticateUser, requireRoles(['a
     }
 
     // Handle security deposit if provided
-    if (securityDepositAmount && parseFloat(securityDepositAmount) > 0) {
+    if (depositAtCheckIn > 0) {
       try {
-        // Create deposit record
-        await sequelize.query(`
-          INSERT INTO deposits (id, booking_id, amount, payment_method, status, collected_date, created_at, updated_at)
-          VALUES ($1, $2, $3, $4, 'collected', NOW(), NOW(), NOW())
-          ON CONFLICT (booking_id) DO UPDATE SET
-            amount = $3,
-            payment_method = $4,
-            status = 'collected',
-            collected_date = NOW(),
-            updated_at = NOW()
-        `, {
-          bind: [require('uuid').v4(), id, parseFloat(securityDepositAmount), securityDepositMethod || 'cash']
+        const tableUsed = await upsertDepositForBooking(sequelize, {
+          bookingId: id,
+          amount: depositAtCheckIn,
+          paymentMethod: securityDepositMethod || 'cash',
         });
+        console.log(`Security deposit saved to ${tableUsed} for booking ${id}`);
       } catch (depositError) {
         console.error('Error creating deposit:', depositError);
-        // Continue even if deposit creation fails
       }
     }
 
@@ -746,21 +877,13 @@ router.post('/internal/bookings/:id/checkout', authenticateUser, requireRoles(['
     // Handle security deposit refund if applicable
     if (refundDeposit) {
       try {
-        const deductionAmount = deductions ? parseFloat(deductions) : 0;
-        await sequelize.query(`
-          UPDATE deposits 
-          SET status = 'refunded', 
-              refund_date = NOW(), 
-              refunded_by = $1,
-              deductions = $2,
-              updated_at = NOW()
-          WHERE booking_id = $3
-        `, {
-          bind: [user.id, deductionAmount, id]
+        await refundDepositForBooking(sequelize, {
+          bookingId: id,
+          refundedBy: user.id,
+          deductions: deductions ? parseFloat(deductions) : 0,
         });
       } catch (depositError) {
         console.error('Error updating deposit:', depositError);
-        // Continue even if deposit update fails
       }
     }
 
@@ -923,6 +1046,18 @@ router.post('/internal/bookings', authenticateUser, requireRoles(['admin', 'cate
     }
 
     const bookingType = bookingData.bookingType || 'daily';
+
+    const depositAmt = bookingData.depositAmount ? parseFloat(bookingData.depositAmount) : 0;
+    let paidRent = bookingData.paidAmount != null ? parseFloat(bookingData.paidAmount) : 0;
+    // If user entered one lump sum (rent + deposit), split it
+    if (depositAmt > 0 && paidRent > totalAmount) {
+      paidRent = Math.max(0, paidRent - depositAmt);
+    } else if (bookingData.paymentStatus === 'paid' && paidRent === 0) {
+      paidRent = parseFloat(totalAmount) || 0;
+    }
+    const paymentStatus =
+      bookingData.paymentStatus ||
+      (paidRent >= totalAmount ? 'paid' : paidRent > 0 ? 'partial' : 'pending');
     
     const [result] = await sequelize.query(`
       INSERT INTO bookings (
@@ -948,9 +1083,9 @@ router.post('/internal/bookings', authenticateUser, requireRoles(['admin', 'cate
         checkOut,
         bookingData.guests || 1,
         totalAmount,
-        bookingData.paidAmount || (bookingData.paymentStatus === 'paid' ? totalAmount : 0),
+        paidRent,
         'confirmed',
-        bookingData.paymentStatus || 'pending',
+        paymentStatus,
         bookingType,
         'offline',
         bookingData.specialRequests || null,
@@ -960,10 +1095,20 @@ router.post('/internal/bookings', authenticateUser, requireRoles(['admin', 'cate
           email: bookingData.guestEmail || '',
           bedNumber: bedNumber,
           bookingType: bookingType,
-          isOpenEnded: isOpenEnded
+          isOpenEnded: isOpenEnded,
+          depositAmount: depositAmt > 0 ? depositAmt : undefined,
+          depositPaymentMethod: bookingData.depositPaymentMethod || 'cash',
         })
       ]
     });
+
+    const linkedPropertyId = propertyDetails.propertyId || propertyDetails.property_id;
+    if (linkedPropertyId) {
+      await sequelize.query(
+        `UPDATE bookings SET property_id = $1 WHERE id = $2 AND property_id IS NULL`,
+        { bind: [linkedPropertyId, bookingId] }
+      );
+    }
 
     // Mark room as occupied and update bed counts in property_details
     try {
@@ -1002,6 +1147,20 @@ router.post('/internal/bookings', authenticateUser, requireRoles(['admin', 'cate
     // Get room title for response
     const roomNumber = (room.title || '').replace('Room ', '');
 
+    // Save security deposit if provided
+    if (depositAmt > 0) {
+      try {
+        await upsertDepositForBooking(sequelize, {
+          bookingId,
+          amount: depositAmt,
+          paymentMethod: bookingData.depositPaymentMethod || 'cash',
+        });
+        console.log('Deposit saved:', depositAmt);
+      } catch (depositError) {
+        console.error('Warning: failed to save deposit:', depositError.message);
+      }
+    }
+
     const newBooking = {
       id: bookingId,
       guestName: bookingData.guestName || 'Walk-in Guest',
@@ -1013,9 +1172,10 @@ router.post('/internal/bookings', authenticateUser, requireRoles(['admin', 'cate
       checkInDate: checkIn.toISOString().split('T')[0],
       checkOutDate: checkOut.toISOString().split('T')[0],
       status: 'confirmed',
-      paymentStatus: bookingData.paymentStatus || 'pending',
+      paymentStatus,
       totalAmount: totalAmount,
-      paidAmount: bookingData.paymentStatus === 'paid' ? totalAmount : 0,
+      paidAmount: paidRent,
+      securityDeposit: depositAmt > 0 ? { amount: depositAmt, status: 'collected' } : undefined,
       guests: bookingData.guests || 1,
       specialRequests: bookingData.specialRequests || null,
       bedId: bookingData.bedId || null,

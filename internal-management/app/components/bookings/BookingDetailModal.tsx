@@ -526,22 +526,28 @@ const BookingDetailModal: React.FC<BookingDetailModalProps> = ({ booking, onClos
                 </div>
 
                 <div className="border-t border-blue-200 pt-4 mt-4">
-                  <h4 className="text-md font-semibold text-gray-900 mb-3">Payment Collection</h4>
+                  <h4 className="text-md font-semibold text-gray-900 mb-3">Rent &amp; security deposit</h4>
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
                       <p className="text-sm text-gray-600">Total Amount</p>
                       <p className="text-lg font-semibold">₹{booking.totalAmount.toLocaleString()}</p>
                     </div>
                     <div>
-                      <p className="text-sm text-gray-600">Already Paid</p>
+                      <p className="text-sm text-gray-600">Rent collected</p>
                       <p className="text-lg font-semibold text-green-600">₹{(parseFloat(booking.paidAmount?.toString() || '0')).toLocaleString()}</p>
                     </div>
+                    {booking.securityDeposit && (
+                      <div>
+                        <p className="text-sm text-gray-600">Security deposit</p>
+                        <p className="text-lg font-semibold text-yellow-700">₹{booking.securityDeposit.amount.toLocaleString()}</p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Amount Paid Now
+                        Rent collected now
                       </label>
                       <input
                         type="number"

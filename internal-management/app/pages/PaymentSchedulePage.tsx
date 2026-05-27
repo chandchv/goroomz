@@ -5,6 +5,7 @@ import {
   type PaymentScheduleResponse,
   type PaymentSchedule,
 } from '../services/paymentService';
+import { bookingService } from '../services/bookingService';
 import PaymentRecordModal from '../components/payments/PaymentRecordModal';
 
 export default function PaymentSchedulePage() {
@@ -18,6 +19,25 @@ export default function PaymentSchedulePage() {
   const [selectedSchedule, setSelectedSchedule] = useState<PaymentSchedule | null>(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'calendar' | 'list'>('list');
+
+  const [tenants, setTenants] = useState<any[]>([]);
+  const [loadingTenants, setLoadingTenants] = useState(false);
+
+  useEffect(() => {
+    const fetchTenants = async () => {
+      setLoadingTenants(true);
+      try {
+        const res = await bookingService.getBookings({ status: 'confirmed', limit: 100 });
+        const monthly = res.data.filter(b => b.bookingType === 'monthly');
+        setTenants(monthly);
+      } catch (err) {
+        console.error('Failed to load tenants:', err);
+      } finally {
+        setLoadingTenants(false);
+      }
+    };
+    fetchTenants();
+  }, []);
 
   useEffect(() => {
     if (bookingIdParam) {
@@ -384,6 +404,69 @@ export default function PaymentSchedulePage() {
             </div>
           )}
         </>
+      )}
+
+      {!scheduleData && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-bold text-gray-800 mb-4">All PG / Co-living Tenants</h2>
+          {loadingTenants ? (
+            <div className="text-center py-6 text-gray-500">Loading tenants list...</div>
+          ) : tenants.length === 0 ? (
+            <div className="text-center py-6 text-gray-500">No active monthly tenants found</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tenant</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Room / Floor</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check-in</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rent / Month</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Paid Amount</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {tenants.map((t) => {
+                    const roomNumber = t.room?.roomNumber || t.room?.title?.replace('Room ', '') || 'N/A';
+                    return (
+                      <tr key={t.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900">{t.contactInfo?.name || t.user?.name || 'Guest'}</div>
+                          <div className="text-sm text-gray-500">{t.contactInfo?.phone || t.user?.phone || ''}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">Room {roomNumber}</div>
+                          <div className="text-sm text-gray-500">Floor {t.room?.floorNumber || Math.floor(parseInt(roomNumber) / 100) || 1}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {new Date(t.checkIn).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                          ₹{(t.totalAmount || 0).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
+                          ₹{(t.paidAmount || 0).toLocaleString()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          <button
+                            onClick={() => {
+                              setBookingId(t.id);
+                              fetchSchedule(t.id);
+                            }}
+                            className="px-4 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs font-semibold"
+                          >
+                            View Schedule
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Payment Record Modal */}

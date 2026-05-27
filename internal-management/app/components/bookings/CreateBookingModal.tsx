@@ -264,6 +264,13 @@ const CreateBookingModal: React.FC<CreateBookingModalProps> = ({ onClose, onSucc
       setLoading(true);
       setError(null);
 
+      const depositVal = depositAmount ? parseFloat(depositAmount) : 0;
+      let rentPaid = paidAmount ? parseFloat(paidAmount) : 0;
+      // If user entered rent+deposit in one field, split automatically
+      if (depositVal > 0 && rentPaid > totalAmount) {
+        rentPaid = Math.max(0, rentPaid - depositVal);
+      }
+
       const bookingData: CreateBookingData = {
         roomId,
         bedId: bedId || undefined,
@@ -276,8 +283,8 @@ const CreateBookingModal: React.FC<CreateBookingModalProps> = ({ onClose, onSucc
         totalAmount,
         specialRequests: specialRequests || undefined,
         paymentStatus,
-        paidAmount: paidAmount ? parseFloat(paidAmount) : undefined,
-        depositAmount: bookingType === 'monthly' && depositAmount ? parseFloat(depositAmount) : undefined,
+        paidAmount: rentPaid > 0 ? rentPaid : undefined,
+        depositAmount: depositVal > 0 ? depositVal : undefined,
         bookingType,
         isHistorical,
       } as any;
@@ -580,13 +587,13 @@ const CreateBookingModal: React.FC<CreateBookingModalProps> = ({ onClose, onSucc
             )}
           </div>
 
-          {/* Deposit Amount for PG Bookings */}
-          {bookingType === 'monthly' && (
+          {/* Security deposit (PG / advance) */}
+          {selectedRoom && checkIn && (
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-4">
-              <h3 className="text-lg font-semibold text-gray-900">Security Deposit</h3>
+              <h3 className="text-lg font-semibold text-gray-900">Security Deposit / Advance</h3>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Deposit Amount <span className="text-red-500">*</span>
+                  Deposit / advance amount {bookingType === 'monthly' && <span className="text-red-500">*</span>}
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-2 text-gray-500">₹</span>
@@ -597,12 +604,12 @@ const CreateBookingModal: React.FC<CreateBookingModalProps> = ({ onClose, onSucc
                     required={bookingType === 'monthly'}
                     min="0"
                     step="100"
-                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
+                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-gray-900"
                     placeholder="5000"
                   />
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  Security deposit required for monthly PG rentals (typically 1-2 months rent)
+                  Stored separately from rent — shows on Security Deposits page
                 </p>
               </div>
             </div>
@@ -657,7 +664,7 @@ const CreateBookingModal: React.FC<CreateBookingModalProps> = ({ onClose, onSucc
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Amount Paid Now
+                    Rent collected now
                   </label>
                   <div className="relative">
                     <span className="absolute left-3 top-2 text-gray-500">₹</span>
@@ -665,10 +672,13 @@ const CreateBookingModal: React.FC<CreateBookingModalProps> = ({ onClose, onSucc
                       type="number"
                       value={paidAmount}
                       onChange={(e) => {
+                        const val = parseFloat(e.target.value) || 0;
+                        const dep = parseFloat(depositAmount) || 0;
+                        const rentOnly = val > totalAmount && dep > 0 ? val - dep : val;
                         setPaidAmount(e.target.value);
-                        if (parseFloat(e.target.value) >= totalAmount) {
+                        if (rentOnly >= totalAmount) {
                           setPaymentStatus('paid');
-                        } else if (parseFloat(e.target.value) > 0) {
+                        } else if (rentOnly > 0) {
                           setPaymentStatus('partial');
                         } else {
                           setPaymentStatus('pending');
@@ -679,6 +689,7 @@ const CreateBookingModal: React.FC<CreateBookingModalProps> = ({ onClose, onSucc
                       min="0"
                     />
                   </div>
+                  <p className="text-xs text-gray-500 mt-1">Rent only — deposit is separate below</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -712,9 +723,21 @@ const CreateBookingModal: React.FC<CreateBookingModalProps> = ({ onClose, onSucc
                 </div>
               )}
               <div className="flex justify-between items-center pt-2 border-t border-blue-200">
-                <span className="text-lg font-semibold text-gray-900">Total Amount</span>
+                <span className="text-lg font-semibold text-gray-900">Rent (booking total)</span>
                 <span className="text-2xl font-bold text-blue-600">₹{totalAmount.toLocaleString()}</span>
               </div>
+              {(parseFloat(depositAmount) || 0) > 0 && (
+                <div className="flex justify-between items-center text-sm text-yellow-800">
+                  <span>+ Security deposit</span>
+                  <span className="font-semibold">₹{parseFloat(depositAmount).toLocaleString()}</span>
+                </div>
+              )}
+              {((parseFloat(paidAmount) || 0) + (parseFloat(depositAmount) || 0)) > 0 && (
+                <div className="flex justify-between items-center text-sm font-medium text-green-800 pt-1 border-t border-blue-100">
+                  <span>Total cash at desk</span>
+                  <span>₹{((parseFloat(paidAmount) || 0) + (parseFloat(depositAmount) || 0)).toLocaleString()}</span>
+                </div>
+              )}
               {checkIn && (
                 <p className="text-sm text-gray-600">
                   {bookingType === 'daily' && checkOut

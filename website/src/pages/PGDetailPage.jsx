@@ -15,10 +15,8 @@ import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { getImageUrl } from '@/utils/imageUtils';
 import propertyService from '@/services/propertyService';
-import BookingModal from '@/components/BookingModal';
 import ShareButton from '@/components/ShareButton';
 import SimilarProperties from '@/components/SimilarProperties';
-import bookingService from '@/services/bookingService';
 
 // Amenity icon mapping
 const amenityConfig = {
@@ -66,8 +64,6 @@ const PGDetailPage = () => {
   const [claimForm, setClaimForm] = useState({ name: '', email: '', phone: '', businessName: '', proofOfOwnership: '' });
   const [claimFiles, setClaimFiles] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
-  const [selectedSharingType, setSelectedSharingType] = useState(null);
   const [enquiryForm, setEnquiryForm] = useState({ name: '', phone: '', email: '', message: '', preferredDate: '' });
 
   useEffect(() => { loadProperty(); }, [identifier]);
@@ -99,28 +95,23 @@ const PGDetailPage = () => {
     } finally { setIsSubmitting(false); }
   };
 
-  const handleBookNow = (sharingType = null) => {
-    setSelectedSharingType(sharingType);
-    setIsBookingModalOpen(true);
-  };
-
-  const handleBookRoom = async (bookingData) => {
-    try {
-      const response = await bookingService.createGuestBooking({
-        room: property.id, name: bookingData.name, email: bookingData.email,
-        phone: bookingData.phone, checkIn: bookingData.moveInDate, guests: 1,
-        specialRequests: bookingData.specialRequests || '', bookingSource: 'online', status: 'pending'
-      });
-      if (response.success) {
-        if (response.data.credentials) {
-          toast({ title: "🎉 Booking Created & Account Created!", description: `Email: ${response.data.credentials.email}`, duration: 10000 });
-        } else {
-          toast({ title: "Booking Created! ✅", description: "Your booking has been created successfully!" });
-        }
-        setIsBookingModalOpen(false);
-      }
-    } catch (error) {
-      toast({ title: "Booking Failed", description: error.message || "Failed to create booking.", variant: "destructive" });
+  const scrollToEnquiry = (sharingType = null) => {
+    if (sharingType && property) {
+      const config = sharingConfig[sharingType] || { label: sharingType };
+      const price = (property.metadata?.pgOptions?.sharingPrices || property.pgOptions?.sharingPrices || {})[sharingType];
+      const priceText = price > 0 ? ` (₹${price.toLocaleString()}/month)` : '';
+      setEnquiryForm((f) => ({
+        ...f,
+        message: `Interested in ${config.label}${priceText} at ${property.name}`,
+      }));
+    }
+    const el = document.getElementById('enquiry-section');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => {
+        const firstInput = el.querySelector('input:not([type="date"])');
+        firstInput?.focus();
+      }, 400);
     }
   };
 
@@ -346,7 +337,7 @@ const PGDetailPage = () => {
                           {dailyPrice > 0 && (
                             <p className="text-xs text-gray-400 mb-3">₹{dailyPrice.toLocaleString()} / day</p>
                           )}
-                          <button onClick={() => handleBookNow(type)}
+                          <button type="button" onClick={() => scrollToEnquiry(type)}
                             className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition">
                             Enquire Now
                           </button>
@@ -568,14 +559,12 @@ const PGDetailPage = () => {
             )}
             {/* Enquiry button */}
             <button
-              onClick={() => {
-                const el = document.getElementById('enquiry-section');
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }}
+              type="button"
+              onClick={() => scrollToEnquiry()}
               className="flex-1 flex items-center justify-center gap-2 py-3 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-xl transition text-sm"
             >
               <Calendar className="w-4 h-4" />
-              Enquire
+              Enquire Now
             </button>
           </div>
         </div>
@@ -621,18 +610,6 @@ const PGDetailPage = () => {
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* ── Booking Modal ── */}
-        {isBookingModalOpen && (
-          <BookingModal
-            room={{ ...property, title: property.name,
-              price: selectedSharingType && sharingPrices[selectedSharingType] ? sharingPrices[selectedSharingType] : Object.values(sharingPrices)[0] || 0,
-              sharingType: selectedSharingType }}
-            isOpen={isBookingModalOpen}
-            onClose={() => setIsBookingModalOpen(false)}
-            onBook={handleBookRoom}
-          />
-        )}
 
         {/* ── Claim Modal ── */}
         {showClaimModal && (

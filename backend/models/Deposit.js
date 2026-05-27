@@ -65,7 +65,7 @@ const Deposit = sequelize.define('Deposit', {
     allowNull: true
   }
 }, {
-  tableName: 'security_deposits',
+  tableName: 'deposits',
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at'

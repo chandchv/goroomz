@@ -1,9 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router';
 import { depositService, type SecurityDeposit, type DepositFilters } from '../services/depositService';
+import PropertyIndicator from '../components/PropertyIndicator';
+import { useSelectedProperty } from '../hooks/useSelectedProperty';
 
 export default function SecurityDepositPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { selectedProperty, hasMultipleProperties } = useSelectedProperty();
   
   const [deposits, setDeposits] = useState<SecurityDeposit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,10 +19,10 @@ export default function SecurityDepositPage() {
   const [filters, setFilters] = useState<DepositFilters>({
     status: searchParams.get('status') || '',
     paymentMethod: searchParams.get('paymentMethod') || '',
-    search: searchParams.get('search') || '',
     page: parseInt(searchParams.get('page') || '1'),
     limit: 20
   });
+  const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
 
   // Individual deposit lookup
   const [showLookup, setShowLookup] = useState(false);
@@ -28,41 +31,68 @@ export default function SecurityDepositPage() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState('');
 
-  useEffect(() => {
-    fetchDeposits();
-  }, [filters.page]);
+  const fetchDeposits = useCallback(async () => {
+    const propertyId = selectedProperty?.id;
 
-  const fetchDeposits = async () => {
+    if (!propertyId) {
+      setDeposits([]);
+      setTotalCount(0);
+      setTotalPages(0);
+      setLoading(false);
+      setError(hasMultipleProperties
+        ? 'Select a property from the header to view deposits.'
+        : '');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
     try {
-      const response = await depositService.getAllDeposits(filters);
-      setDeposits(response.data);
+      const response = await depositService.getAllDeposits({
+        ...filters,
+        status: filters.status || undefined,
+        paymentMethod: filters.paymentMethod || undefined,
+        search: searchTerm.trim() || undefined,
+        propertyId,
+      });
+      setDeposits(response.data || []);
       setTotalCount(response.total);
       setCurrentPage(response.page);
       setTotalPages(response.pages);
     } catch (err: any) {
       console.error('Error fetching deposits:', err);
       setError(err.response?.data?.message || 'Failed to fetch deposits');
+      setDeposits([]);
     } finally {
       setLoading(false);
     }
+  }, [filters, searchTerm, selectedProperty?.id, hasMultipleProperties]);
+
+  useEffect(() => {
+    fetchDeposits();
+  }, [fetchDeposits]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFilters((prev) => (prev.page !== 1 ? { ...prev, page: 1 } : prev));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  const syncUrlParams = (updatedFilters: DepositFilters, search: string) => {
+    const params = new URLSearchParams();
+    if (updatedFilters.status) params.set('status', updatedFilters.status);
+    if (updatedFilters.paymentMethod) params.set('paymentMethod', updatedFilters.paymentMethod);
+    if (search) params.set('search', search);
+    if (updatedFilters.page && updatedFilters.page > 1) params.set('page', updatedFilters.page.toString());
+    setSearchParams(params);
   };
 
   const handleFilterChange = (newFilters: Partial<DepositFilters>) => {
     const updatedFilters = { ...filters, ...newFilters, page: 1 };
     setFilters(updatedFilters);
-    
-    // Update URL params
-    const params = new URLSearchParams();
-    if (updatedFilters.status) params.set('status', updatedFilters.status);
-    if (updatedFilters.paymentMethod) params.set('paymentMethod', updatedFilters.paymentMethod);
-    if (updatedFilters.search) params.set('search', updatedFilters.search);
-    if (updatedFilters.page && updatedFilters.page > 1) params.set('page', updatedFilters.page.toString());
-    
-    setSearchParams(params);
-    fetchDeposits();
+    syncUrlParams(updatedFilters, searchTerm);
   };
 
   const handlePageChange = (page: number) => {
@@ -147,7 +177,10 @@ export default function SecurityDepositPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Security Deposits</h1>
-          <p className="text-gray-600 mt-1">Manage all security deposits and refunds</p>
+          <p className="text-gray-600 mt-1">Manage security deposits and refunds for your property</p>
+          <div className="mt-2">
+            <PropertyIndicator size="sm" showRoomCount={false} />
+          </div>
         </div>
         <button
           onClick={() => setShowLookup(!showLookup)}
@@ -248,9 +281,9 @@ export default function SecurityDepositPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
             <input
               type="text"
-              value={filters.search || ''}
-              onChange={(e) => handleFilterChange({ search: e.target.value || undefined })}
-              placeholder="Guest name, room number..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Guest name, room number, booking ID..."
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
             />
           </div>
@@ -258,8 +291,8 @@ export default function SecurityDepositPage() {
             <button
               onClick={() => {
                 setFilters({ page: 1, limit: 20 });
+                setSearchTerm('');
                 setSearchParams(new URLSearchParams());
-                fetchDeposits();
               }}
               className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
             >
@@ -331,6 +364,12 @@ export default function SecurityDepositPage() {
         </div>
       </div>
 
+      {hasMultipleProperties && !selectedProperty && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg text-amber-800">
+          Select a property from the header to view security deposits for that property.
+        </div>
+      )}
+
       {/* Error Message */}
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
@@ -358,7 +397,11 @@ export default function SecurityDepositPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <p className="text-lg font-medium">No deposits found</p>
-            <p className="text-sm">Try adjusting your filters or search criteria</p>
+            <p className="text-sm">
+              {selectedProperty
+                ? `No security deposits for ${selectedProperty.name}. Deposits appear after guest check-in.`
+                : 'Try adjusting your filters or select a property'}
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -400,7 +443,8 @@ export default function SecurityDepositPage() {
                           {deposit.booking?.user?.email || 'N/A'}
                         </p>
                         <p className="text-sm text-gray-500">
-                          Room {deposit.booking?.room?.roomNumber || 'N/A'} - Floor {deposit.booking?.room?.floorNumber || 'N/A'}
+                          Room {deposit.booking?.room?.roomNumber || 'N/A'}
+                          {deposit.booking?.bookingType === 'monthly' && ` - Bed ${deposit.booking?.room?.bedNumber || 1}`} - Floor {deposit.booking?.room?.floorNumber || 'N/A'}
                         </p>
                       </div>
                     </td>

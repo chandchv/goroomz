@@ -24,11 +24,13 @@ export interface SecurityDeposit {
     totalAmount: number;
     status: string;
     guests: number;
+    bookingType?: string;
     room?: {
       id: string;
       title: string;
       roomNumber: string;
       floorNumber: number;
+      bedNumber?: number;
     };
     user?: {
       id: string;
@@ -47,6 +49,7 @@ export interface SecurityDeposit {
 export interface DepositFilters {
   status?: string;
   paymentMethod?: string;
+  propertyId?: string;
   startDate?: string;
   endDate?: string;
   search?: string;
@@ -87,6 +90,7 @@ class DepositService {
     
     if (filters.status) params.append('status', filters.status);
     if (filters.paymentMethod) params.append('paymentMethod', filters.paymentMethod);
+    if (filters.propertyId) params.append('propertyId', filters.propertyId);
     if (filters.startDate) params.append('startDate', filters.startDate);
     if (filters.endDate) params.append('endDate', filters.endDate);
     if (filters.search) params.append('search', filters.search);

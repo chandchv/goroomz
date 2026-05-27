@@ -26,7 +26,7 @@ const RoomChangeModal: React.FC<RoomChangeModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState('Room assignment update');
   const [filterFloor, setFilterFloor] = useState<number | 'all'>('all');
   const [filterSharingType, setFilterSharingType] = useState<string>('all');
 

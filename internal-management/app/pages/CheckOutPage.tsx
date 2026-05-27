@@ -120,7 +120,7 @@ export default function CheckOutPage() {
       });
 
       const occupied = response.data.filter(booking => 
-        booking.actualCheckInTime && !booking.actualCheckOutTime
+        (booking.actualCheckInTime || booking.status === 'confirmed') && !booking.actualCheckOutTime
       );
 
       setOccupiedRooms(occupied);

@@ -264,7 +264,7 @@ export default function CheckInPage() {
 
     // For shared/PG rooms, occupied just means some beds are taken — not necessarily all.
     const sharingType = booking.room.sharingType;
-    const isShared = sharingType && sharingType !== 'single';
+    const isShared = (sharingType && sharingType !== 'single') || booking.bookingType === 'monthly';
     if (isShared) return false; // backend validates actual bed availability
 
     return true; // single room that's occupied — block

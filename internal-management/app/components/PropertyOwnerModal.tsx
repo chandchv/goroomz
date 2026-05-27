@@ -115,12 +115,12 @@ const PropertyOwnerModal: React.FC<PropertyOwnerModalProps> = ({
       setLoading(true);
 
       if (editingOwner) {
-        // Update existing owner
         await superuserService.updatePropertyOwner(editingOwner.id, {
           name: formData.name,
           email: formData.email,
           phone: formData.phone || undefined,
         });
+        alert('Property owner updated successfully');
         onSuccess();
       } else {
         // Create new owner

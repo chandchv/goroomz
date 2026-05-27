@@ -1774,6 +1774,112 @@ router.get('/internal/superuser/property-owners/:id', async (req, res) => {
   }
 });
 
+// @desc    Update property owner details
+// @route   PUT /api/internal/superuser/property-owners/:id
+// @access  Private (superuser, admin, category_owner)
+router.put('/internal/superuser/property-owners/:id', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
+    }
+
+    const token = authHeader.substring(7);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const currentUser = await User.findByPk(decoded.id);
+
+    if (!currentUser) {
+      return res.status(401).json({ success: false, message: 'Invalid token' });
+    }
+
+    const platformRoles = ['admin', 'category_owner', 'superuser'];
+    if (!platformRoles.includes(currentUser.role)) {
+      return res.status(403).json({ success: false, message: 'Access denied. Platform management access required.' });
+    }
+
+    const { name, phone } = req.body;
+    if (name !== undefined && !String(name).trim()) {
+      return res.status(400).json({ success: false, message: 'Name cannot be empty' });
+    }
+
+    const cleanId = req.params.id.replace('owner_', '');
+
+    const formatPropertyOwner = (user) => ({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      isVerified: user.isVerified !== false,
+      createdAt: user.created_at || user.createdAt || new Date().toISOString(),
+      updatedAt: user.updated_at || user.updatedAt || new Date().toISOString(),
+    });
+
+    const ownerUser = await User.findByPk(cleanId);
+    if (ownerUser) {
+      const updates = {};
+      if (name !== undefined) updates.name = String(name).trim();
+      if (phone !== undefined) updates.phone = phone || null;
+
+      await ownerUser.update(updates);
+
+      // Keep linked leads in sync
+      const leadUpdates = {};
+      if (name !== undefined) leadUpdates.propertyOwnerName = String(name).trim();
+      if (phone !== undefined) leadUpdates.phone = phone || null;
+      if (Object.keys(leadUpdates).length > 0) {
+        await Lead.update(leadUpdates, { where: { email: ownerUser.email } });
+      }
+
+      return res.json({
+        success: true,
+        data: { propertyOwner: formatPropertyOwner(ownerUser) },
+      });
+    }
+
+    // Fall back to lead-only owner (no user account yet)
+    const lead = await Lead.findByPk(cleanId);
+    if (!lead) {
+      return res.status(404).json({ success: false, message: 'Property owner not found' });
+    }
+
+    const leadUpdates = {};
+    if (name !== undefined) leadUpdates.propertyOwnerName = String(name).trim();
+    if (phone !== undefined) leadUpdates.phone = phone || null;
+    await lead.update(leadUpdates);
+
+    const linkedUser = await User.findOne({ where: { email: lead.email } });
+    if (linkedUser) {
+      const userUpdates = {};
+      if (name !== undefined) userUpdates.name = String(name).trim();
+      if (phone !== undefined) userUpdates.phone = phone || null;
+      await linkedUser.update(userUpdates);
+
+      return res.json({
+        success: true,
+        data: { propertyOwner: formatPropertyOwner(linkedUser) },
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        propertyOwner: {
+          id: `owner_${lead.id}`,
+          name: lead.propertyOwnerName,
+          email: lead.email,
+          phone: lead.phone,
+          isVerified: lead.status === 'approved',
+          createdAt: lead.created_at || lead.createdAt,
+          updatedAt: lead.updated_at || lead.updatedAt,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Update property owner error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error updating property owner' });
+  }
+});
+
 // @desc    Activate property owner
 // @route   PUT /api/internal/superuser/property-owners/:id/activate
 // @access  Private (superuser, admin)

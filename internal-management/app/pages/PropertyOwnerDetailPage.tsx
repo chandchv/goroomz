@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import superuserService, { type PropertyOwner } from '../services/superuserService';
+import PropertyOwnerModal from '../components/PropertyOwnerModal';
 
 const PropertyOwnerDetailPage: React.FC = () => {
   const { ownerId } = useParams<{ ownerId: string }>();
@@ -11,7 +12,8 @@ const PropertyOwnerDetailPage: React.FC = () => {
   const [deactivateConfirm, setDeactivateConfirm] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
-
+  const [editOwnerModalOpen, setEditOwnerModalOpen] = useState(false);
+ 
   useEffect(() => {
     if (ownerId) {
       loadOwnerDetails();
@@ -82,6 +84,15 @@ const PropertyOwnerDetailPage: React.FC = () => {
     navigate('/property-owners');
   };
 
+  const handleEditModalClose = () => {
+    setEditOwnerModalOpen(false);
+  };
+
+  const handleEditModalSuccess = () => {
+    setEditOwnerModalOpen(false);
+    loadOwnerDetails();
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -128,6 +139,12 @@ const PropertyOwnerDetailPage: React.FC = () => {
           </div>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={() => setEditOwnerModalOpen(true)}
+            className="px-4 py-2 border border-blue-600 text-blue-600 rounded hover:bg-blue-50"
+            >
+            ✏️ Edit Owner
+          </button>
           {/* Activate button for inactive users */}
           {!owner.isVerified && (
             <button
@@ -165,6 +182,7 @@ const PropertyOwnerDetailPage: React.FC = () => {
           >
             🔑 Reset Password
           </button>
+         
         </div>
       </div>
 
@@ -342,6 +360,13 @@ const PropertyOwnerDetailPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <PropertyOwnerModal
+        isOpen={editOwnerModalOpen}
+        onClose={handleEditModalClose}
+        onSuccess={handleEditModalSuccess}
+        editingOwner={owner}
+      />
     </div>
   );
 };
